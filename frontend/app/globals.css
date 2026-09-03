@@ -1,0 +1,228 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ *
+ * Capstone Compass - design tokens
+ * A wayfinding instrument for charting a capstone, not a SaaS dashboard.
+ * ------------------------------------------------------------------ */
+:root {
+  --ink: #12172b;
+  --ink-soft: #2a3150;
+  --ink-hairline: #3a4266;
+  --parchment: #f5f3ec;
+  --parchment-raised: #fbfaf5;
+  --brass: #b8863b;
+  --brass-soft: #d8b483;
+  --deep-teal: #1f6f6b;
+  --charcoal-text: #1c1e26;
+  --charcoal-muted: #565a68;
+  --hairline: #d8d3c4;
+
+  --shadow-panel: inset 0 0 0 1px var(--hairline);
+
+  /* the app shell / nav is always the dark "ink" surface, in both themes,
+     so its foreground tokens must NOT be remapped by the dark blocks below */
+  --on-ink: #f2efe6;
+  --on-ink-dim: rgba(242, 239, 230, 0.68);
+  --on-ink-accent: #d8b483;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --parchment: #14182a;
+    --parchment-raised: #1b2036;
+    --charcoal-text: #ece9df;
+    --charcoal-muted: #9aa0b4;
+    --hairline: #313854;
+    --ink: #0d1120;
+    --ink-soft: #1b2036;
+    --ink-hairline: #313854;
+    --brass: #cc9a52;
+    --brass-soft: #6a5326;
+    --deep-teal: #3fa39d;
+  }
+}
+
+:root[data-theme="dark"] {
+  --parchment: #14182a;
+  --parchment-raised: #1b2036;
+  --charcoal-text: #ece9df;
+  --charcoal-muted: #9aa0b4;
+  --hairline: #313854;
+  --ink: #0d1120;
+  --ink-soft: #1b2036;
+  --ink-hairline: #313854;
+  --brass: #cc9a52;
+  --brass-soft: #6a5326;
+  --deep-teal: #3fa39d;
+}
+
+* {
+  border-color: var(--hairline);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--parchment);
+  color: var(--charcoal-text);
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-feature-settings: "cv05" 1, "ss01" 1;
+  line-height: 1.55;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-fraunces), Georgia, Cambria, serif;
+  font-weight: 460;
+  letter-spacing: -0.005em;
+  color: var(--charcoal-text);
+  text-wrap: balance;
+}
+
+::selection {
+  background: var(--brass-soft);
+  color: var(--ink);
+}
+
+/* keyboard focus - always visible, never removed */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--deep-teal);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * primitives
+ * ------------------------------------------------------------------ */
+@layer components {
+  .data-token {
+    font-family: var(--font-jetbrains), ui-monospace, "SFMono-Regular", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .panel {
+    background: var(--parchment-raised);
+    box-shadow: var(--shadow-panel);
+    border-radius: 2px;
+  }
+
+  /* a chart card - a hairline frame, no floaty drop shadow */
+  .chart-card {
+    background: var(--parchment-raised);
+    border: 1px solid var(--hairline);
+    border-radius: 3px;
+  }
+  .chart-card--primary {
+    border-left: 3px solid var(--brass);
+  }
+
+  .readout-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .readout-row:last-child {
+    border-bottom: 0;
+  }
+  .readout-label {
+    font-size: 0.75rem;
+    color: var(--charcoal-muted);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.15rem;
+    border-radius: 2px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+  }
+  .btn-primary {
+    background: var(--brass);
+    color: #1a1206;
+  }
+  .btn-primary:hover {
+    background: #a5762f;
+  }
+  .btn-ghost {
+    border: 1px solid var(--hairline);
+    color: var(--charcoal-text);
+    background: transparent;
+  }
+  .btn-ghost:hover {
+    border-color: var(--deep-teal);
+    color: var(--deep-teal);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .link-teal {
+    color: var(--deep-teal);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.55rem;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    color: var(--charcoal-muted);
+    white-space: nowrap;
+  }
+
+  .band-strong { color: var(--deep-teal); }
+  .band-moderate { color: var(--brass); }
+  .band-weak { color: var(--charcoal-muted); }
+}
+
+/* ------------------------------------------------------------------ *
+ * one deliberate motion moment: the compass needle finding north
+ * ------------------------------------------------------------------ */
+@keyframes needle-settle {
+  0%   { transform: rotate(-140deg); }
+  35%  { transform: rotate(28deg); }
+  62%  { transform: rotate(-14deg); }
+  82%  { transform: rotate(6deg); }
+  100% { transform: rotate(var(--needle-to, 0deg)); }
+}
+
+.needle-settling {
+  animation: needle-settle 1100ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  transform-origin: center;
+}
+
+.compass-rose-watermark {
+  opacity: 0.07;
+  color: var(--charcoal-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .needle-settling {
+    animation: none;
+    transform: rotate(var(--needle-to, 0deg));
+  }
+}
