@@ -7,7 +7,7 @@ import pytest
 from app.config import settings
 from app.ml.ingest import clean, read_source
 from app.ml.pipeline import DocMeta, train
-from app.ml.recommender import StudentProfile, parse_refinement, recommend
+from app.ml.recommender import StudentProfile, correct_typos, parse_refinement, recommend, refine
 
 _KW = dict(
     route_threshold=settings.route_confidence_threshold,
@@ -80,3 +80,30 @@ def test_refinement_parsing():
     assert "ar/vr" in parse.negative
     assert "simulation" in parse.negative  # polarity carried across "and"
     assert any("optimization" in p for p in parse.positive)
+
+
+def test_typo_correction_fixes_domain_words_without_mangling_real_words(art):
+    vocab = art.unigram_vocab()
+    # a genuine domain typo should resolve to the real corpus term
+    assert correct_typos("quatum", vocab) == "quantum"
+    # a legitimate English word that just isn't domain vocabulary must survive
+    # untouched - regression test for a real bug where "field" (not in this
+    # narrow corpus) got fuzzy-matched into an unrelated in-vocabulary word
+    # ("yield", from crop-yield statements) purely by edit distance.
+    assert correct_typos("field", vocab) == "field"
+
+
+def test_chat_refine_does_not_leak_cross_domain_results(art):
+    """A student who explicitly names one domain in chat should not have
+    unrelated-cluster statements padded into the results "for breadth" -
+    regression test for a real complaint: asking for "the medical field"
+    surfaced logistics/supply-chain statements alongside genuine matches."""
+    p = StudentProfile(skills=["python"], interests=[])
+    res, parse = refine(
+        art, p, "i want to work in the medical field quatum suggeste me in that field", **_KW
+    )
+    assert "quantum" in parse.positive  # the typo was corrected
+    if res.mode == "routed":
+        # every result must come from a cluster the routing actually chose -
+        # none smuggled in from an unrelated domain "for breadth"
+        assert all(r.cluster_id in res.routed_clusters for r in res.recommendations)

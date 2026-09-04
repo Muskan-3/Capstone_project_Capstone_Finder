@@ -4,58 +4,77 @@
 
 /* ------------------------------------------------------------------ *
  * Capstone Compass - design tokens
- * A wayfinding instrument for charting a capstone, not a SaaS dashboard.
+ * White is the dominant surface; light blue is the one clearly-visible
+ * secondary tone (section bands, the chat canvas); violet is the one
+ * added accent. Variable NAMES are kept from the earlier palette
+ * (brass/deep-teal/parchment/ink) so every component that already
+ * references them re-themes for free - only the VALUES changed:
+ *   --brass      -> primary blue   (buttons, links, active states, "strong")
+ *   --deep-teal  -> violet         (secondary accent, "moderate", tags)
+ *   --parchment       -> app canvas (pure white)
+ *   --parchment-raised-> cards / nav (pure white, defined by hairline borders)
+ *   --tint-blue       -> secondary surface (light blue bands, chat canvas)
+ *   --ink             -> deep navy (brand panels, dark surfaces)
  * ------------------------------------------------------------------ */
 :root {
-  --ink: #12172b;
-  --ink-soft: #2a3150;
-  --ink-hairline: #3a4266;
-  --parchment: #f5f3ec;
-  --parchment-raised: #fbfaf5;
-  --brass: #b8863b;
-  --brass-soft: #d8b483;
-  --deep-teal: #1f6f6b;
-  --charcoal-text: #1c1e26;
-  --charcoal-muted: #565a68;
-  --hairline: #d8d3c4;
+  --ink: #11235a;
+  --ink-soft: #1a3480;
+  --ink-hairline: #2c4ea0;
+  --parchment: #ffffff;
+  --parchment-raised: #ffffff;
+  --tint-blue: #eaf1ff;
+  --tint-blue-soft: #f4f8ff;
+  --brass: #2f6fed;
+  --brass-soft: #e4ecff;
+  --deep-teal: #7c5cfc;
+  --deep-teal-soft: #ece7ff;
+  --charcoal-text: #10182c;
+  --charcoal-muted: #5b6478;
+  --hairline: #e1e7f4;
 
   --shadow-panel: inset 0 0 0 1px var(--hairline);
 
-  /* the app shell / nav is always the dark "ink" surface, in both themes,
-     so its foreground tokens must NOT be remapped by the dark blocks below */
-  --on-ink: #f2efe6;
-  --on-ink-dim: rgba(242, 239, 230, 0.68);
-  --on-ink-accent: #d8b483;
+  /* text/foreground for the rare deep-navy surface (e.g. the login brand
+     panel) - kept stable across themes, unlike the tokens above */
+  --on-ink: #f5f8ff;
+  --on-ink-dim: rgba(245, 248, 255, 0.72);
+  --on-ink-accent: #8fb3ff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --parchment: #14182a;
-    --parchment-raised: #1b2036;
-    --charcoal-text: #ece9df;
-    --charcoal-muted: #9aa0b4;
-    --hairline: #313854;
-    --ink: #0d1120;
-    --ink-soft: #1b2036;
-    --ink-hairline: #313854;
-    --brass: #cc9a52;
-    --brass-soft: #6a5326;
-    --deep-teal: #3fa39d;
+    --parchment: #0a0f1f;
+    --parchment-raised: #121a2f;
+    --tint-blue: #101c38;
+    --tint-blue-soft: #0d1729;
+    --charcoal-text: #e8edfa;
+    --charcoal-muted: #93a0c2;
+    --hairline: #263257;
+    --ink: #060a16;
+    --ink-soft: #0f1830;
+    --ink-hairline: #263257;
+    --brass: #5c8dff;
+    --brass-soft: #1a2c55;
+    --deep-teal: #a68cff;
+    --deep-teal-soft: #241f4a;
   }
 }
 
 :root[data-theme="dark"] {
-  --parchment: #14182a;
-  --parchment-raised: #1b2036;
-  --charcoal-text: #ece9df;
-  --charcoal-muted: #9aa0b4;
-  --hairline: #313854;
-  --ink: #0d1120;
-  --ink-soft: #1b2036;
-  --ink-hairline: #313854;
-  --brass: #cc9a52;
-  --brass-soft: #6a5326;
-  --deep-teal: #3fa39d;
+  --parchment: #0a0f1f;
+  --parchment-raised: #121a2f;
+  --tint-blue: #101c38;
+  --tint-blue-soft: #0d1729;
+  --charcoal-text: #e8edfa;
+  --charcoal-muted: #93a0c2;
+  --hairline: #263257;
+  --ink: #060a16;
+  --ink-soft: #0f1830;
+  --ink-hairline: #263257;
+  --brass: #5c8dff;
+  --brass-soft: #1a2c55;
+  --deep-teal: #a68cff;
+  --deep-teal-soft: #241f4a;
 }
 
 * {
@@ -91,7 +110,7 @@ h1, h2, h3, h4 {
 
 /* keyboard focus - always visible, never removed */
 :where(a, button, input, textarea, select, [tabindex]):focus-visible {
-  outline: 2px solid var(--deep-teal);
+  outline: 2px solid var(--brass);
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -151,10 +170,10 @@ h1, h2, h3, h4 {
   }
   .btn-primary {
     background: var(--brass);
-    color: #1a1206;
+    color: #ffffff;
   }
   .btn-primary:hover {
-    background: #a5762f;
+    background: #1e54c9;
   }
   .btn-ghost {
     border: 1px solid var(--hairline);
@@ -162,8 +181,8 @@ h1, h2, h3, h4 {
     background: transparent;
   }
   .btn-ghost:hover {
-    border-color: var(--deep-teal);
-    color: var(--deep-teal);
+    border-color: var(--brass);
+    color: var(--brass);
   }
   .btn:disabled {
     opacity: 0.45;
@@ -171,7 +190,7 @@ h1, h2, h3, h4 {
   }
 
   .link-teal {
-    color: var(--deep-teal);
+    color: var(--brass);
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-thickness: 1px;
@@ -189,8 +208,8 @@ h1, h2, h3, h4 {
     white-space: nowrap;
   }
 
-  .band-strong { color: var(--deep-teal); }
-  .band-moderate { color: var(--brass); }
+  .band-strong { color: var(--brass); }
+  .band-moderate { color: var(--deep-teal); }
   .band-weak { color: var(--charcoal-muted); }
 }
 
@@ -213,6 +232,69 @@ h1, h2, h3, h4 {
 .compass-rose-watermark {
   opacity: 0.07;
   color: var(--charcoal-text);
+}
+
+/* chat "thinking" indicator - distinct from the needle-settle "answer arrived"
+   moment above, so that motion stays meaningful rather than decorative */
+@keyframes compass-spin {
+  to { transform: rotate(360deg); }
+}
+.compass-spin {
+  animation: compass-spin 1.6s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes chat-turn-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.chat-turn-in {
+  animation: chat-turn-in 260ms ease-out both;
+}
+
+/* ------------------------------------------------------------------ *
+ * marketing-page motion (landing) - livelier than the product UI on
+ * purpose: this is the page that has to sell the idea in five seconds.
+ * ------------------------------------------------------------------ */
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-14px) rotate(2deg); }
+}
+@keyframes float-slower {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(16px); }
+}
+.float-a { animation: float-slow 7s ease-in-out infinite; }
+.float-b { animation: float-slower 9s ease-in-out infinite; animation-delay: -3s; }
+
+@keyframes gradient-pan {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.gradient-pan {
+  background-size: 200% 200%;
+  animation: gradient-pan 12s ease infinite;
+}
+
+@keyframes bounce-dot {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40%           { transform: translateY(-4px); opacity: 1; }
+}
+.bounce-dot {
+  animation: bounce-dot 1.2s ease-in-out infinite;
+}
+
+/* scroll-reveal: JS toggles .is-visible via IntersectionObserver (ScrollReveal
+   component). Starts visible with no transform if JS never runs. */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 600ms ease, transform 600ms ease;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 @media (prefers-reduced-motion: reduce) {

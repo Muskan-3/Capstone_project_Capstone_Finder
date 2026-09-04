@@ -63,7 +63,7 @@ export function MatchCompass({
   const [xv, yv] = arc(target);
 
   const bandColor =
-    band === "strong" ? "var(--deep-teal)" : band === "moderate" ? "var(--brass)" : "var(--charcoal-muted)";
+    band === "strong" ? "var(--brass)" : band === "moderate" ? "var(--deep-teal)" : "var(--charcoal-muted)";
 
   return (
     <div className="flex flex-col items-center gap-1" style={{ width: size }}>

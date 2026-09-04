@@ -118,8 +118,8 @@ export default function AboutPage() {
       </ul>
 
       <div className="mt-10">
-        <Link href="/onboarding" className="btn btn-primary">
-          Chart my profile
+        <Link href="/login" className="btn btn-primary">
+          Log in &amp; chat
         </Link>
       </div>
     </div>

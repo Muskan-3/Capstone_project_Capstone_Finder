@@ -51,11 +51,27 @@ export class ApiError extends Error {
 export const api = {
   health: () => req<{ status: string; offline: boolean }>("/api/health"),
 
-  saveStudent: (s: StudentProfile) =>
-    req<StudentProfile & { id: number }>("/api/students", {
-      method: "POST",
-      body: JSON.stringify(s),
-    }),
+  saveStudent: async (s: StudentProfile) => {
+    try {
+      return await req<StudentProfile & { id: number }>("/api/students", {
+        method: "POST",
+        body: JSON.stringify(s),
+      });
+    } catch (err) {
+      // A stale `id` from a previous session (e.g. a locally-reset demo
+      // database) 404s as "student not found" - self-heal by creating a
+      // fresh student instead of surfacing that as a dead end.
+      if (err instanceof ApiError && err.status === 404 && s.id != null) {
+        return req<StudentProfile & { id: number }>("/api/students", {
+          method: "POST",
+          body: JSON.stringify({ ...s, id: undefined }),
+        });
+      }
+      throw err;
+    }
+  },
+
+  getStudent: (id: number) => req<StudentProfile & { id: number }>(`/api/students/${id}`),
 
   recommend: (student_id: number, filters: Record<string, unknown> = {}) =>
     req<RecommendationResponse>("/api/recommendations", {

@@ -15,13 +15,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen antialiased">
         <SiteNav />
         <main>{children}</main>
-        <footer className="mx-auto max-w-chart px-4 py-10 text-xs text-charcoal-text/55 sm:px-6">
-          <p>
-            Capstone Compass runs fully offline on classical ML (TF-IDF + KMeans + cosine
-            similarity). Recommendations are retrieval and adaptation over the local corpus, not
-            generative. Faculty matching is inactive until real preference data is collected.
-          </p>
-        </footer>
       </body>
     </html>
   );

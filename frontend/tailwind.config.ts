@@ -13,6 +13,8 @@ const config: Config = {
         "ink-soft": "var(--ink-soft)",
         parchment: "var(--parchment)",
         "parchment-raised": "var(--parchment-raised)",
+        "tint-blue": "var(--tint-blue)",
+        "tint-blue-soft": "var(--tint-blue-soft)",
         brass: "var(--brass)",
         "brass-soft": "var(--brass-soft)",
         "deep-teal": "var(--deep-teal)",

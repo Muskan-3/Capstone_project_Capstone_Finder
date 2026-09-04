@@ -135,3 +135,26 @@ export interface FacultyPreferenceList {
   active_in_scoring: boolean;
   note: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * chat + session
+ * ------------------------------------------------------------------ */
+export interface Session {
+  studentId: number;
+  name: string;
+  email: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  /** the raw, detailed backend message (routing confidence, parsed terms) -
+   *  kept alongside the friendlier `text` shown by default, and revealed
+   *  behind a "Routing details" toggle. */
+  detail?: string;
+  createdAt: string;
+  result?: RecommendationResponse;
+  pending?: boolean;
+  error?: boolean;
+}

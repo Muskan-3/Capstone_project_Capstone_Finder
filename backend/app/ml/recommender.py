@@ -8,6 +8,7 @@ carries its real ``project_id`` and its real cosine score.
 
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -15,10 +16,48 @@ from typing import Any
 import numpy as np
 from scipy import sparse
 from sklearn.preprocessing import normalize
+from spellchecker import SpellChecker
 
 from .pipeline import DocMeta, ModelArtifacts
 
 _WORD = re.compile(r"[A-Za-z][A-Za-z0-9+.#-]{1,}")
+
+# A bundled, offline word-frequency dictionary (no network call, ships with the
+# package) - used only to decide whether a word is *already* legitimate
+# English before ever attempting to "correct" it. Loaded once at import.
+_ENGLISH = SpellChecker(distance=1)
+
+
+def correct_typos(text: str, vocabulary: set[str] | None) -> str:
+    """Fix typed-in typos before they silently vanish as out-of-vocabulary
+    noise in the TF-IDF match (e.g. "quatum" -> "quantum").
+
+    Two-layer, both fully offline / grounded, never a hosted model:
+      1. If a word is already valid English (bundled dictionary), leave it
+         alone - this is what stops a real word like "field" (just not one
+         that happens to appear in this narrow corpus) from being mangled
+         into an unrelated in-vocabulary word like "yield".
+      2. Otherwise fuzzy-match it against words that actually appear in the
+         *trained corpus vocabulary* - so a correction is only ever made
+         into a term this catalogue can actually match on, never an external
+         dictionary word chosen at random.
+    """
+    if not text:
+        return text
+
+    def fix(m: re.Match[str]) -> str:
+        word = m.group(0)
+        lower = word.lower()
+        if len(lower) < 5 or lower in _ENGLISH or (vocabulary and lower in vocabulary):
+            return word
+        if vocabulary:
+            match = difflib.get_close_matches(lower, vocabulary, n=1, cutoff=0.8)
+            if match:
+                return match[0]
+        corrected = _ENGLISH.correction(lower)
+        return corrected if corrected else word
+
+    return _WORD.sub(fix, text)
 
 # cosine similarity that maps to a "full" relevance bar. No student/statement pair
 # in the seed corpus exceeds ~0.42, so the relevance term never actually saturates -
@@ -224,7 +263,7 @@ def recommend(
     exclude_project_ids: set[str] | None = None,
 ) -> RecResult:
     exclude_project_ids = exclude_project_ids or set()
-    query = profile.query_text()
+    query = correct_typos(profile.query_text(), art.unigram_vocab())
     student_vec = _student_vector(art, query)
 
     weights_doc = (
@@ -280,7 +319,12 @@ def recommend(
         label_list = " + ".join(f"“{art.cluster_label(c)}”" for c in routed_clusters)
         message = (
             f"Routed to {label_list} ({len(in_cluster)} statements) with routing confidence "
-            f"{cluster_confidence:.3f}, plus {len(serendipity_rows)} cross-cluster picks for breadth."
+            f"{cluster_confidence:.3f}"
+            + (
+                f", plus {len(serendipity_rows)} cross-cluster pick(s) for breadth."
+                if serendipity_rows
+                else "."
+            )
         )
     else:
         routed_clusters = []
@@ -407,6 +451,15 @@ _STOP = {
     "the", "a", "an", "of", "and", "or", "to", "for", "with", "on", "in", "me",
     "please", "ideas", "idea", "project", "projects", "statement", "statements",
     "based", "kind", "type", "results", "result", "them", "that", "this",
+    # first-person / conversational filler - the chat UI feeds whole sentences
+    # ("I know Python and I'm interested in...") into this parser, not just
+    # short constraint phrases, so filler needs to be stripped before it
+    # gets mistaken for a topic to boost or avoid.
+    "i", "im", "i'm", "ive", "i've", "id", "i'd", "know", "knows", "knowing",
+    "am", "is", "are", "was", "were", "be", "been", "being", "my", "mine",
+    "have", "has", "had", "want", "wants", "would", "like", "likes", "about",
+    "into", "interested", "interest", "interests", "skill", "skills",
+    "experience", "background", "also", "really", "just", "so", "very",
 }
 
 
@@ -419,8 +472,8 @@ class RefineParse:
         return asdict(self)
 
 
-def parse_refinement(text: str) -> RefineParse:
-    text = text.strip()
+def parse_refinement(text: str, vocabulary: set[str] | None = None) -> RefineParse:
+    text = correct_typos(text.strip(), vocabulary)
     negative: list[str] = []
     positive: list[str] = []
     # polarity carries across "and"/comma-joined clauses that have no marker of
@@ -435,9 +488,14 @@ def parse_refinement(text: str) -> RefineParse:
         pos = bool(_POS_PAT.search(chunk))
         cleaned = _POS_PAT.sub("", _NEG_PAT.sub("", chunk)).strip()
         keywords = [w for w in _tokens(cleaned) if w not in _STOP and len(w) > 2]
-        # keep short multi-word phrases too (e.g. "ar/vr", "web based")
-        phrase = re.sub(r"[^a-z0-9 /+-]", "", cleaned.lower()).strip()
-        target = ([phrase] if len(phrase.split()) <= 3 and phrase else []) + keywords
+        # keep short multi-word phrases too (e.g. "ar/vr", "web based") - built
+        # from the raw text (so characters like "/" survive, unlike _tokens()),
+        # with filler words trimmed from either end so "I know Python" yields
+        # "python", not the whole sentence.
+        raw_phrase = re.sub(r"[^a-z0-9 /+-]", "", cleaned.lower()).strip()
+        phrase_parts = [w for w in raw_phrase.split() if w not in _STOP]
+        phrase = " ".join(phrase_parts)
+        target = ([phrase] if 0 < len(phrase_parts) <= 3 else []) + keywords
         target = list(dict.fromkeys(t for t in target if t))
         if not target:
             continue
@@ -471,7 +529,7 @@ def refine(
     band_strong: float,
     band_moderate: float,
 ) -> tuple[RecResult, RefineParse]:
-    parse = parse_refinement(constraint_text)
+    parse = parse_refinement(constraint_text, art.unigram_vocab())
 
     augmented = StudentProfile(
         skills=list(profile.skills),
@@ -485,7 +543,12 @@ def refine(
         art,
         augmented,
         route_threshold=route_threshold,
-        serendipity=serendipity,
+        # A refine() call always carries explicit intent from the user's own
+        # words - unlike a cold-start recommend(), padding the results with
+        # cross-cluster "breadth" picks here means silently mixing in
+        # off-topic statements (e.g. logistics content when someone asked
+        # specifically for "the medical field"). Keep results in-domain.
+        serendipity=0,
         weights=weights,
         mmr_lambda=mmr_lambda,
         top_k=max(top_k * 3, 12),

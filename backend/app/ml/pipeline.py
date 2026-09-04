@@ -57,6 +57,18 @@ class ModelArtifacts:
     def meta_by_row(self, row: int) -> DocMeta:
         return self.docs_meta[row]
 
+    def unigram_vocab(self) -> set[str]:
+        """Single words drawn from the fitted TF-IDF vocabulary (which also
+        contains 2-word phrases) - used for grounded, offline typo-tolerance:
+        a chat word gets fuzzy-matched only against words that actually
+        appear in this corpus, never an external dictionary. Computed on
+        demand (not cached on the dataclass) so older pickled artifacts
+        loaded from disk don't need a matching stored field."""
+        vocab: set[str] = set()
+        for feat in self.vectorizer.get_feature_names_out():
+            vocab.update(feat.split())
+        return vocab
+
     def status_summary(self) -> dict[str, Any]:
         return {
             "version": self.version,
