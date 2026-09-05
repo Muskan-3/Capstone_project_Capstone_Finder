@@ -23,6 +23,9 @@ class Settings(BaseSettings):
 
     # --- server ---
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # optional regex for origins that can't be listed exactly (e.g. every Vercel
+    # preview deployment: https://capstone-compass-<hash>-<team>.vercel.app)
+    cors_origin_regex: str | None = None
     auto_seed: bool = True  # build corpus + first model on startup if the DB is empty
 
     # --- ML pipeline ---
