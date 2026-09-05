@@ -1,7 +1,9 @@
 """Test bootstrap.
 
-Point the app at a throwaway DB + artifacts dir *before* anything imports
-``app.config``, so no module reloading is needed.
+Point the app at a throwaway DB *before* anything imports ``app.config``, so
+no module reloading is needed. Override COMPASS_DATABASE_URL yourself (e.g.
+to a postgresql:// URL) to run the suite against Postgres instead of the
+SQLite default - nothing else needs to change.
 """
 
 import sys
@@ -14,5 +16,4 @@ _TMP = Path(tempfile.mkdtemp(prefix="compass-tests-"))
 import os  # noqa: E402
 
 os.environ.setdefault("COMPASS_DATABASE_URL", f"sqlite:///{_TMP/'test.db'}")
-os.environ.setdefault("COMPASS_ARTIFACTS_DIR", str(_TMP / "artifacts"))
 os.environ.setdefault("COMPASS_AUTO_SEED", "true")

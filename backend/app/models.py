@@ -10,6 +10,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -107,3 +108,10 @@ class ModelVersion(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     trained_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # the fitted vectorizer + kmeans + doc vectors + cluster assignments, joblib-
+    # serialized. Stored in the database (not on local disk) on purpose: a
+    # serverless host (Vercel functions included) gives the process no
+    # persistent filesystem at all, so the database is the only durable place
+    # for this - and it means local dev, Render, and Vercel all load the
+    # active model the same way, from the same table.
+    artifact_blob: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)

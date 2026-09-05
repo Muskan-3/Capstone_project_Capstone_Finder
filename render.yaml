@@ -2,7 +2,12 @@
 # Optional convenience: import this repo at render.com/deploy and Render will
 # read this file automatically. If the Blueprint schema has drifted since
 # this was written, just create the service by hand in the dashboard instead -
-# see DEPLOYMENT.md for the exact settings (build/start command, disk, env vars).
+# see DEPLOYMENT.md for the exact settings.
+#
+# No persistent disk needed: the database and every trained model version
+# live in Postgres (Supabase), not on local disk - COMPASS_DATABASE_URL below
+# is marked `sync: false` so its value (with your real credentials) is
+# entered once in the Render dashboard, never committed to the repo.
 services:
   - type: web
     name: capstone-compass-api
@@ -12,15 +17,9 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
-    disk:
-      name: compass-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: COMPASS_DATABASE_URL
-        value: sqlite:////var/data/compass.db
-      - key: COMPASS_ARTIFACTS_DIR
-        value: /var/data/artifacts
+        sync: false # paste your Supabase "Session pooler" connection string here
       - key: COMPASS_AUTO_SEED
         value: "true"
       - key: COMPASS_CORS_ORIGINS

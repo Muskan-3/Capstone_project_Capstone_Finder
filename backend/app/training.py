@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -35,10 +35,14 @@ def _active_docs(db: Session) -> list[DocMeta]:
     return docs
 
 
+def _next_version(db: Session) -> int:
+    return (db.scalar(select(func.max(ModelVersion.version))) or 0) + 1
+
+
 def retrain(db: Session, *, notes: str = "") -> ModelVersion:
     """Run the full Section 5 pipeline over the entire active corpus and activate it."""
     docs = _active_docs(db)
-    version = store.next_version()
+    version = _next_version(db)
     artifacts: ModelArtifacts = train(
         docs,
         version=version,
@@ -48,7 +52,7 @@ def retrain(db: Session, *, notes: str = "") -> ModelVersion:
         k_max=settings.kmeans_k_max,
         random_state=settings.random_state,
     )
-    store.save(artifacts)
+    blob = store.serialize(artifacts)
 
     # write cluster assignments back onto the corpus rows
     cluster_by_id = dict(zip(artifacts.doc_ids, (int(c) for c in artifacts.doc_clusters)))
@@ -66,11 +70,11 @@ def retrain(db: Session, *, notes: str = "") -> ModelVersion:
         params=json.dumps(artifacts.params),
         notes=notes,
         is_active=True,
+        artifact_blob=blob,
     )
     db.add(mv)
     db.commit()
     db.refresh(mv)
-    store.evict()  # force a reload keyed on the new active version
     return mv
 
 
@@ -82,11 +86,9 @@ def get_active_version(db: Session) -> ModelVersion | None:
 
 def get_active_artifacts(db: Session) -> ModelArtifacts | None:
     mv = get_active_version(db)
-    if mv is None:
+    if mv is None or mv.artifact_blob is None:
         return None
-    if not store.has(mv.version):
-        return None
-    return store.load(mv.version)
+    return store.deserialize(mv.version, mv.artifact_blob)
 
 
 def activate_version(db: Session, version: int) -> ModelVersion:
@@ -95,18 +97,17 @@ def activate_version(db: Session, version: int) -> ModelVersion:
     ).first()
     if target is None:
         raise ValueError(f"model version {version} does not exist")
-    if not store.has(version):
-        raise ValueError(f"model version {version} has no saved artifact on disk")
+    if target.artifact_blob is None:
+        raise ValueError(f"model version {version} has no saved artifact")
     for mv in db.scalars(select(ModelVersion).where(ModelVersion.is_active.is_(True))).all():
         mv.is_active = False
     target.is_active = True
 
-    art = store.load(version)
+    art = store.deserialize(version, target.artifact_blob)
     cluster_by_id = dict(zip(art.doc_ids, (int(c) for c in art.doc_clusters)))
     for r in db.scalars(select(ProblemStatement)).all():
         r.cluster_id = cluster_by_id.get(r.id)
 
     db.commit()
     db.refresh(target)
-    store.evict()
     return target

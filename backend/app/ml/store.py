@@ -1,60 +1,42 @@
-"""Versioned on-disk model artifacts (joblib).
+"""In-process cache + (de)serialization for trained model artifacts.
 
-Layout:  artifacts/v{n}/model.joblib  +  artifacts/v{n}/meta.json
-
-The DB table ``model_versions`` is the source of truth for which version is
-*active*; this module just persists and loads the fitted objects. Old versions
-are never deleted, so a retrain is always reversible.
+The database (``model_versions.artifact_blob``) is the durable copy - see
+``app/training.py``, which owns the DB session. This module deliberately has
+no filesystem or DB access of its own: a serverless host (Vercel functions
+included) gives the process no persistent disk, so the database has to be the
+only source of truth, and every environment (local dev, Render, Vercel) loads
+the active model the same way. This module just avoids re-deserializing the
+same version's ~MB-sized blob on every request within one warm process.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
+import io
 
 import joblib
 
-from ..config import settings
 from .pipeline import ModelArtifacts
 
 _CACHE: dict[int, ModelArtifacts] = {}
 
 
-def _version_dir(version: int) -> Path:
-    return settings.artifacts_dir / f"v{version}"
-
-
-def next_version() -> int:
-    existing = [
-        int(p.name[1:])
-        for p in settings.artifacts_dir.glob("v*")
-        if p.is_dir() and p.name[1:].isdigit()
-    ]
-    return (max(existing) + 1) if existing else 1
-
-
-def save(artifacts: ModelArtifacts) -> int:
-    vdir = _version_dir(artifacts.version)
-    vdir.mkdir(parents=True, exist_ok=True)
-    joblib.dump(artifacts, vdir / "model.joblib", compress=3)
-    (vdir / "meta.json").write_text(json.dumps(artifacts.status_summary(), indent=2))
+def serialize(artifacts: ModelArtifacts) -> bytes:
+    buf = io.BytesIO()
+    joblib.dump(artifacts, buf, compress=3)
     _CACHE[artifacts.version] = artifacts
-    return artifacts.version
+    return buf.getvalue()
 
 
-def load(version: int) -> ModelArtifacts:
+def deserialize(version: int, blob: bytes) -> ModelArtifacts:
     if version in _CACHE:
         return _CACHE[version]
-    path = _version_dir(version) / "model.joblib"
-    if not path.exists():
-        raise FileNotFoundError(f"No saved artifact for model version {version} ({path})")
-    art: ModelArtifacts = joblib.load(path)
+    art: ModelArtifacts = joblib.load(io.BytesIO(blob))
     _CACHE[version] = art
     return art
 
 
-def has(version: int) -> bool:
-    return version in _CACHE or (_version_dir(version) / "model.joblib").exists()
+def cached(version: int) -> ModelArtifacts | None:
+    return _CACHE.get(version)
 
 
 def evict(version: int | None = None) -> None:

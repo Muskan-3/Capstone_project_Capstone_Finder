@@ -17,8 +17,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="COMPASS_", env_file=".env", extra="ignore")
 
     # --- storage ---
+    # Local dev default: a SQLite file next to the code. In production, set
+    # COMPASS_DATABASE_URL to a postgresql:// URL (e.g. Supabase) - required
+    # on any host without a persistent disk. Trained models live in this same
+    # database (model_versions.artifact_blob), not on disk, so there is no
+    # separate "artifacts directory" to configure.
     database_url: str = f"sqlite:///{BACKEND_DIR / 'compass.db'}"
-    artifacts_dir: Path = BACKEND_DIR / "artifacts"
     source_workbook: Path = BACKEND_DIR / "data" / "source.xlsx"
 
     # --- server ---
@@ -53,4 +57,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-settings.artifacts_dir.mkdir(parents=True, exist_ok=True)
