@@ -45,6 +45,7 @@ Nothing else to do here - the app creates its own tables on first boot.
 4. **Environment variables** (Settings → Environment):
    | Key | Value |
    |---|---|
+   | `PYTHON_VERSION` | `3.12.7` |
    | `COMPASS_DATABASE_URL` | the Supabase connection string from step 0.2, with `postgresql://` changed to `postgresql+psycopg2://` |
    | `COMPASS_AUTO_SEED` | `true` |
    | `COMPASS_CORS_ORIGINS` | `http://localhost:3000` *(update after step 2 below)* |
@@ -53,6 +54,8 @@ Nothing else to do here - the app creates its own tables on first boot.
 6. Copy the service URL Render gives you, e.g. `https://capstone-compass-api.onrender.com`. Confirm: `curl https://<your-service>.onrender.com/api/health`.
 
 **Free-tier caveat:** Render's free web services spin down after 15 minutes idle; the next request wakes it in 30-60s. Fine for a demo; upgrading to a paid instance removes it with no code changes.
+
+**If the build fails with `preparing metadata (pyproject.toml) ... error`:** Render picked a Python version newer than 3.12, and numpy/scipy/scikit-learn don't ship prebuilt wheels for it yet, so pip tries to compile from source and fails. The repo now pins `backend/.python-version` to `3.12.7`, and the `PYTHON_VERSION` env var above is a second, more explicit way to force the same thing - set both if you hit this. If it still fails, open the build log and check which specific package name appears right above the error; that tells you which pin needs a version bump instead.
 
 ---
 

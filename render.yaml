@@ -18,6 +18,8 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7 # numpy/scipy/scikit-learn have no wheels for 3.13+; pin to avoid a source build
       - key: COMPASS_DATABASE_URL
         sync: false # paste your Supabase "Session pooler" connection string here
       - key: COMPASS_AUTO_SEED
