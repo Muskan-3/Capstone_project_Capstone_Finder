@@ -12,6 +12,11 @@ backend/compass.db
 backend/artifacts/
 backend/.env
 
+# chatbot small-talk layer - large trained weights + downloaded corpus
+chatbot/models/
+chatbot/data/personachat_pairs.jsonl
+chatbot/hf_cache/
+
 # Node / Next.js
 node_modules/
 .next/

@@ -52,6 +52,27 @@ def test_recommendation_flow_and_guardrails(client):
         assert item["recommendation_id"]
 
 
+def test_smalltalk_never_hits_the_engine(client):
+    s = client.post("/api/students", json={
+        "name": "Ada Lovelace", "skills": ["python"], "interests": ["quantum"],
+    }).json()
+    for msg, intent in [("hii", "greeting"), ("who are you?", "identity"),
+                        ("how are you?", "wellbeing"), ("thanks!", "thanks"),
+                        ("what's the weather like", "offtopic")]:
+        r = client.post("/api/recommendations/refine", json={
+            "student_id": s["id"], "constraint": msg,
+        }).json()
+        assert r["mode"] == "smalltalk", msg
+        assert r["recommendations"] == []       # engine never ran
+        assert r["message"]                     # a real canned reply
+        assert r["refinement"]["intent"] == intent
+    # a real ask still routes to the engine
+    task = client.post("/api/recommendations/refine", json={
+        "student_id": s["id"], "constraint": "suggest a machine learning project",
+    }).json()
+    assert task["mode"] != "smalltalk"
+
+
 def test_patch_clears_flag(client):
     flagged = client.get("/api/corpus/flagged").json()
     target = next(f for f in flagged if f["flag_reason"] == "missing_title")

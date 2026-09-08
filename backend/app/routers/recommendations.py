@@ -10,6 +10,7 @@ from ..db import get_db
 from ..ml.recommender import RecResult, StudentProfile, recommend, refine
 from ..models import Recommendation, Student
 from ..schemas import RecommendationRequest, RecommendationResponse, RefineRequest
+from ..smalltalk import classify, respond
 from ..training import get_active_artifacts, get_active_version
 
 router = APIRouter(prefix="/api/recommendations", tags=["recommendations"])
@@ -28,6 +29,26 @@ _KW = dict(
     band_strong=settings.band_strong,
     band_moderate=settings.band_moderate,
 )
+
+
+def _smalltalk_response(student: Student, intent: str) -> RecommendationResponse:
+    """A greeting / identity / thanks / farewell / off-topic message - answered
+    with a fixed reply, the recommendation engine never runs. Same response
+    shape as a normal turn so the frontend can render it as a plain bubble."""
+    return RecommendationResponse(
+        student_id=student.id,
+        model_version=None,
+        mode="smalltalk",
+        message=respond(intent, student.name),
+        routed_cluster=None,
+        routed_clusters=[],
+        cluster_confidence=0.0,
+        cluster_distribution=[],
+        scoring_formula="",
+        weights={},
+        recommendations=[],
+        refinement={"intent": intent},
+    )
 
 
 def _profile(student: Student) -> StudentProfile:
@@ -109,6 +130,12 @@ def refine_recommendations(
     student = db.get(Student, payload.student_id)
     if student is None:
         raise HTTPException(404, f"student {payload.student_id} not found")
+
+    # greeting / identity / thanks / farewell / off-topic -> fixed reply,
+    # the recommendation engine never runs and can't invent a project.
+    route = classify(payload.constraint)
+    if route.destination == "smalltalk":
+        return _smalltalk_response(student, route.intent)
 
     art = get_active_artifacts(db)
     if art is None:

@@ -59,7 +59,7 @@ export interface ClusterDist {
 export interface RecommendationResponse {
   student_id: number;
   model_version: number | null;
-  mode: "routed" | "low_confidence" | "no_signal";
+  mode: "routed" | "low_confidence" | "no_signal" | "smalltalk";
   message: string;
   routed_cluster: number | null;
   routed_clusters: number[];

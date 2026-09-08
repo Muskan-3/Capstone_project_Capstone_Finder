@@ -1,0 +1,6 @@
+# Chatbot small-talk layer - two-stage offline fine-tune.
+# Heavy; kept out of the backend service on purpose. Install into its own venv.
+datasets>=2.14,<3.0        # <3.0 keeps compatibility with community dataset scripts
+transformers>=4.40,<5.0
+torch>=2.2
+accelerate>=0.30

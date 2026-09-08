@@ -10,7 +10,25 @@ import { CompassMark } from "@/components/CompassMark";
 import { api, ApiError } from "@/lib/api";
 import { friendlyLead } from "@/lib/format";
 import { chatStore, profileStore, sessionStore } from "@/lib/store";
-import type { ChatMessage, StudentProfile } from "@/lib/types";
+import type { ChatMessage, RecommendationResponse, StudentProfile } from "@/lib/types";
+
+/** Turn an API response into the assistant message. Small-talk replies render
+ *  as a plain bubble (no cards, no routing detail); everything else gets the
+ *  friendly lead + the recommendation result attached. */
+function toAnswer(res: RecommendationResponse, id: string): ChatMessage {
+  const now = new Date().toISOString();
+  if (res.mode === "smalltalk") {
+    return { id, role: "assistant", text: res.message, createdAt: now };
+  }
+  return {
+    id,
+    role: "assistant",
+    text: friendlyLead(res),
+    detail: res.message,
+    createdAt: now,
+    result: res,
+  };
+}
 
 function welcomeMessage(name: string): ChatMessage {
   return {
@@ -116,15 +134,7 @@ export default function ChatPage() {
       setBusy(true);
       try {
         const res = await api.refine(studentId, text);
-        const answer: ChatMessage = {
-          id: pendingMsg.id,
-          role: "assistant",
-          text: friendlyLead(res),
-          detail: res.message,
-          createdAt: new Date().toISOString(),
-          result: res,
-        };
-        persist([...withPending.slice(0, -1), answer]);
+        persist([...withPending.slice(0, -1), toAnswer(res, pendingMsg.id)]);
       } catch (err) {
         if (err instanceof ApiError && err.status === 404 && profile) {
           // session outlived the backend record it points to - recover
@@ -137,16 +147,9 @@ export default function ChatPage() {
             setStudentId(fresh.id);
             setProfile(fresh);
             const res = await api.refine(fresh.id, text);
-            const answer: ChatMessage = {
-              id: pendingMsg.id,
-              role: "assistant",
-              text: friendlyLead(res),
-              detail: res.message,
-              createdAt: new Date().toISOString(),
-              result: res,
-            };
-            setMessages(withPending.slice(0, -1).concat(answer));
-            chatStore.set(fresh.id, withPending.slice(0, -1).concat(answer));
+            const recovered = withPending.slice(0, -1).concat(toAnswer(res, pendingMsg.id));
+            setMessages(recovered);
+            chatStore.set(fresh.id, recovered);
             setBusy(false);
             return;
           } catch {
