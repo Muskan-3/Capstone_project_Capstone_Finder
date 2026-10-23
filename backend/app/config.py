@@ -39,17 +39,21 @@ class Settings(BaseSettings):
     kmeans_k_max: int = 10
     random_state: int = 42
 
-    # --- routing / ranking (calibrated against the seed corpus; see scripts/pipeline_demo.py) ---
-    route_confidence_threshold: float = 0.06
-    serendipity_cross_cluster: int = 6
+    # --- routing / gating / ranking ---
+    # gate: mean of the top-3 cosine similarities inside the routed domain(s);
+    # below it the request is treated as off-topic and nothing is shown.
+    # Calibrated on an on-/off-topic eval set (scripts/eval_routing.py).
+    gate_threshold: float = 0.109
+    # classifier-routed requests (no keyword fired) also need this share of their
+    # 10 nearest documents in a single domain - off-topic asks match scattered docs
+    topic_concentration_min: float = 0.45
+    # route to the classifier's top two domains when #2 has >= this share of #1's probability
+    domain_split_ratio: float = 0.5
     weight_relevance: float = 0.80
     weight_feasibility: float = 0.20
     weight_faculty: float = 0.00  # faculty matching is inactive until real preference data exists
     mmr_lambda: float = 0.70
     top_k: int = 5
-    # cosine similarity bands for the honest per-item confidence label
-    band_strong: float = 0.17
-    band_moderate: float = 0.09
 
     @property
     def cors_origin_list(self) -> list[str]:

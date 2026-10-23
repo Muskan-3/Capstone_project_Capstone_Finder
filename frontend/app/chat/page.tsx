@@ -20,6 +20,9 @@ function toAnswer(res: RecommendationResponse, id: string): ChatMessage {
   if (res.mode === "smalltalk") {
     return { id, role: "assistant", text: res.message, createdAt: now };
   }
+  if (res.mode === "generated") {
+    return { id, role: "assistant", text: res.message, createdAt: now, result: res };
+  }
   return {
     id,
     role: "assistant",

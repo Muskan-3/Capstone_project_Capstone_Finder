@@ -207,26 +207,6 @@ h1, h2, h3, h4 {
     color: var(--charcoal-muted);
     white-space: nowrap;
   }
-
-  .band-strong { color: var(--brass); }
-  .band-moderate { color: var(--deep-teal); }
-  .band-weak { color: var(--charcoal-muted); }
-}
-
-/* ------------------------------------------------------------------ *
- * one deliberate motion moment: the compass needle finding north
- * ------------------------------------------------------------------ */
-@keyframes needle-settle {
-  0%   { transform: rotate(-140deg); }
-  35%  { transform: rotate(28deg); }
-  62%  { transform: rotate(-14deg); }
-  82%  { transform: rotate(6deg); }
-  100% { transform: rotate(var(--needle-to, 0deg)); }
-}
-
-.needle-settling {
-  animation: needle-settle 1100ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
-  transform-origin: center;
 }
 
 .compass-rose-watermark {
@@ -234,8 +214,8 @@ h1, h2, h3, h4 {
   color: var(--charcoal-text);
 }
 
-/* chat "thinking" indicator - distinct from the needle-settle "answer arrived"
-   moment above, so that motion stays meaningful rather than decorative */
+/* chat "thinking" indicator - distinct from the "answer arrived" chat-turn-in
+   moment below, so that motion stays meaningful rather than decorative */
 @keyframes compass-spin {
   to { transform: rotate(360deg); }
 }
@@ -302,9 +282,5 @@ h1, h2, h3, h4 {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
-  }
-  .needle-settling {
-    animation: none;
-    transform: rotate(var(--needle-to, 0deg));
   }
 }

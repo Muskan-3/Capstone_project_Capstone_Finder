@@ -45,11 +45,21 @@ def test_recommendation_flow_and_guardrails(client):
         "name": "T", "skills": ["react", "typescript"], "interests": ["web apps", "accessibility"],
     }).json()
     rec = client.post("/api/recommendations", json={"student_id": s["id"], "filters": {}}).json()
-    assert rec["mode"] in {"low_confidence", "no_signal"}
+    # off-topic for this (quantum) corpus: no projects at all, just domains to try
+    assert rec["mode"] in {"off_topic", "no_signal"}
+    assert rec["recommendations"] == []
+    assert rec["suggested_domains"]
+
+    q = client.post("/api/students", json={
+        "name": "Q", "skills": ["qiskit", "python"], "interests": ["quantum machine learning"],
+    }).json()
+    rec = client.post("/api/recommendations", json={"student_id": q["id"], "filters": {}}).json()
+    assert rec["mode"] == "routed" and rec["routed_domains"] == ["Quantum Computing"]
     for item in rec["recommendations"]:
         assert item["project_id"]
-        assert 0.0 <= item["similarity"] < 1.0
         assert item["recommendation_id"]
+        assert item["domain"] == "Quantum Computing"
+        assert "confidence_band" not in item
 
 
 def test_smalltalk_never_hits_the_engine(client):

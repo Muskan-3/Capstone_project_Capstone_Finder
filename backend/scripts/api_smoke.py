@@ -72,14 +72,10 @@ def main() -> int:
         "interests": ["web design", "accessibility"], "tech_comfort": "high",
     })
     rec = call("POST", "/api/recommendations", {"student_id": s["id"], "filters": {}})
-    checks.append(("non-quantum -> low_confidence/no_signal",
-                   rec["mode"] in {"low_confidence", "no_signal"}))
-    checks.append(("every rec cites a project_id",
-                   all(r["project_id"] for r in rec["recommendations"])))
-    checks.append(("every rec has a real cosine score",
-                   all(isinstance(r["similarity"], (int, float)) for r in rec["recommendations"])))
-    checks.append(("no rec claims 100%",
-                   all(r["similarity"] < 1.0 for r in rec["recommendations"])))
+    checks.append(("non-quantum -> off_topic/no_signal",
+                   rec["mode"] in {"off_topic", "no_signal"}))
+    checks.append(("off-topic shows no projects", rec["recommendations"] == []))
+    checks.append(("off-topic suggests domains", bool(rec["suggested_domains"])))
 
     # quantum student -> routed
     q = call("POST", "/api/students", {

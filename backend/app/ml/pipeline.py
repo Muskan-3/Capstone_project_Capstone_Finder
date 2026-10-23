@@ -1,10 +1,14 @@
-"""Vectorize -> cluster (with a silhouette sweep) -> package a versioned artifact.
+"""Vectorize -> fit the domain router -> cluster -> package a versioned artifact.
 
-Step 2 and Step 3 of Section 5. The clustering is the mechanism that stops the
-~98% quantum majority from drowning out every other domain: routing happens at the
-cluster level *before* ranking, so a non-quantum profile can be sent to a small
-non-quantum cluster (or to the honest low-confidence state) instead of being
-force-ranked against 185 quantum statements.
+Routing is by *domain*: every statement carries a domain label (stored, or
+inferred by ``domains.infer_domain``), and a TF-IDF + logistic-regression
+classifier over those labels is the fallback for queries no keyword rule
+catches. Ranking then happens only inside the routed domain(s).
+
+KMeans no longer takes part in routing, gating or ranking. It is kept as a
+descriptive topic map for the admin views (corpus cluster column / filter,
+model status page) and as the "row is in the trained model" marker
+(``problem_statements.cluster_id`` is set only for trained rows).
 """
 
 from __future__ import annotations
@@ -17,8 +21,11 @@ import numpy as np
 from scipy import sparse
 from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import normalize
+
+from .domains import infer_domain
 
 
 @dataclass
@@ -28,6 +35,7 @@ class DocMeta:
     title: str
     statement: str
     source_batch: str
+    domain: str | None = None
 
 
 @dataclass
@@ -48,11 +56,19 @@ class ModelArtifacts:
     params: dict[str, Any]
     corpus_size: int
     trained_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # domain routing (absent on artifacts trained before it existed - see has_domain_router)
+    doc_domains: list[str | None] = field(default_factory=list)   # aligned with doc_ids
+    domain_clf: LogisticRegression | None = None
+    domain_sizes: dict[str, int] = field(default_factory=dict)
 
     # ---- convenience --------------------------------------------------- #
     def cluster_label(self, cluster_id: int) -> str:
         terms = self.cluster_terms.get(cluster_id, [])
         return " · ".join(terms[:3]) if terms else f"cluster {cluster_id}"
+
+    def has_domain_router(self) -> bool:
+        # getattr: artifacts pickled before domain routing have no such attribute
+        return bool(getattr(self, "doc_domains", None))
 
     def meta_by_row(self, row: int) -> DocMeta:
         return self.docs_meta[row]
@@ -102,8 +118,9 @@ def train(
     k_min: int = 4,
     k_max: int = 10,
     random_state: int = 42,
+    domain_c: float = 4.0,
 ) -> ModelArtifacts:
-    """Fit the TF-IDF + KMeans pipeline over the *active* (non-flagged) corpus."""
+    """Fit TF-IDF, the domain classifier and KMeans over the *active* (non-flagged) corpus."""
     if len(docs) < k_min + 2:
         raise ValueError(
             f"Need at least {k_min + 2} active problem statements to train; got {len(docs)}."
@@ -123,6 +140,24 @@ def train(
     )
     doc_matrix = normalize(vectorizer.fit_transform(corpus))  # rows already l2, be explicit
     feature_names = vectorizer.get_feature_names_out()
+
+    # --- domain router ------------------------------------------------------ #
+    # stored label first; rows that never got one are labelled by the same rules
+    # as scripts/assign_domains.py, and rows no rule fits stay unlabelled (they
+    # are never routed to and never used to train the classifier)
+    doc_domains = [
+        d.domain or infer_domain(d.project_id, d.title, d.statement)[0] for d in docs
+    ]
+    labelled = [i for i, dom in enumerate(doc_domains) if dom]
+    y = [doc_domains[i] for i in labelled]
+    domain_clf: LogisticRegression | None = None
+    if len(set(y)) >= 2:
+        # balanced: Quantum Computing has ~190 rows next to ~1000 for most domains
+        domain_clf = LogisticRegression(C=domain_c, max_iter=2000, class_weight="balanced")
+        domain_clf.fit(doc_matrix[labelled], y)
+    domain_sizes: dict[str, int] = {}
+    for dom in y:
+        domain_sizes[dom] = domain_sizes.get(dom, 0) + 1
 
     # --- silhouette sweep to choose k -------------------------------------- #
     upper = max(k_min + 1, min(k_max, len(docs) - 1))
@@ -169,6 +204,9 @@ def train(
         silhouette=best_score,
         silhouette_by_k=silhouette_by_k,
         corpus_size=len(docs),
+        doc_domains=doc_domains,
+        domain_clf=domain_clf,
+        domain_sizes=domain_sizes,
         params={
             "max_features": max_features,
             "ngram_range": [1, 2],
@@ -179,5 +217,14 @@ def train(
             "k_max": k_max,
             "chosen_k": best_k,
             "cluster_selection": "best cosine silhouette over k in [k_min, k_max]",
+            "domain_router": {
+                "keywords": "app.ml.domains.QUERY_KEYWORDS",
+                "classifier": "LogisticRegression" if domain_clf is not None else None,
+                "C": domain_c,
+                "class_weight": "balanced",
+                "labelled_docs": len(labelled),
+                "inferred_labels": sum(1 for d in docs if not d.domain) - (len(docs) - len(labelled)),
+                "unlabelled_docs": len(docs) - len(labelled),
+            },
         },
     )

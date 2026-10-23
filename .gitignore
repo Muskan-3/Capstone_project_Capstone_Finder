@@ -28,3 +28,6 @@ npm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+
+# Local problem corpus (not committed)
+backend/data/problems_corpus_v2.csv

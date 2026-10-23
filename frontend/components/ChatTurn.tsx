@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { CompassMark } from "./CompassMark";
+import { GeneratedIdeaCard } from "./GeneratedIdeaCard";
 import { RecommendationCard } from "./RecommendationCard";
 import type { ChatMessage } from "@/lib/types";
 
@@ -29,8 +30,9 @@ function TypingDots() {
 
 const modeTone: Record<string, string> = {
   routed: "border-l-brass",
-  low_confidence: "border-l-deep-teal",
+  off_topic: "border-l-charcoal-text/30",
   no_signal: "border-l-charcoal-text/30",
+  generated: "border-l-deep-teal",
 };
 
 export function ChatTurn({ message }: { message: ChatMessage }) {
@@ -73,11 +75,20 @@ export function ChatTurn({ message }: { message: ChatMessage }) {
               </div>
             )}
 
-            {result && result.recommendations.length === 0 && result.mode !== "routed" && (
+            {result?.mode === "generated" && (result.generated_ideas?.length ?? 0) > 0 && (
+              <div className="space-y-4">
+                {result.generated_ideas!.map((idea, i) => (
+                  <GeneratedIdeaCard key={`${message.id}-idea-${i}`} idea={idea} index={i + 1} />
+                ))}
+              </div>
+            )}
+
+            {/* off-topic / no-signal: the banner already says so and lists domains to try */}
+            {result && result.recommendations.length === 0 && result.mode === "routed" && (
               <div className="chart-card max-w-[85%] p-4 text-sm text-charcoal-text/70">
-                Nothing to chart from that yet.{" "}
+                Nothing left after your filters.{" "}
                 <Link href="/login" className="link-teal">
-                  Add a few more concrete skills or interests
+                  Adjust your skills or interests
                 </Link>{" "}
                 and ask again.
               </div>
@@ -90,7 +101,6 @@ export function ChatTurn({ message }: { message: ChatMessage }) {
                     key={`${message.id}-${rec.project_id}`}
                     rec={rec}
                     primary={rec.rank === 1 && result.mode === "routed"}
-                    settle
                   />
                 ))}
               </div>

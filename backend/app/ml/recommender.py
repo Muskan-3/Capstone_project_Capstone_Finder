@@ -1,9 +1,10 @@
-"""Route -> rank -> diversify -> explain -> adapt text.
+"""Route by domain -> gate -> rank -> diversify -> explain -> adapt text.
 
-Steps 4-7 of Section 5. Pure functions over a ``ModelArtifacts`` snapshot and a
-student profile dict. No database access, no text generation - the shown text is
-the real corpus statement wrapped in a fixed rationale template, and every item
-carries its real ``project_id`` and its real cosine score.
+Pure functions over a ``ModelArtifacts`` snapshot and a student profile. No
+database access, no text generation - the shown text is the real corpus
+statement wrapped in a fixed rationale template, and every item carries its
+real ``project_id``. Scores are kept for ranking, gating and the stored
+explanation; the student-facing UI does not display them.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from scipy import sparse
 from sklearn.preprocessing import normalize
 from spellchecker import SpellChecker
 
+from .domains import DOMAINS, keyword_hits
 from .pipeline import DocMeta, ModelArtifacts
 
 _WORD = re.compile(r"[A-Za-z][A-Za-z0-9+.#-]{1,}")
@@ -59,10 +61,14 @@ def correct_typos(text: str, vocabulary: set[str] | None) -> str:
 
     return _WORD.sub(fix, text)
 
-# cosine similarity that maps to a "full" relevance bar. No student/statement pair
-# in the seed corpus exceeds ~0.42, so the relevance term never actually saturates -
-# there is deliberately no path to a displayed "100% / perfect match".
+# cosine similarity that maps to a "full" relevance bar in the composite score.
+# A fixed scale (not min-max) keeps the weights meaningful without manufacturing
+# a "perfect match" for whichever item happens to top the list.
 REL_SCALE = 0.50
+# the document-level gate averages this many best in-domain similarities
+GATE_TOP_N = 3
+# topic concentration = largest single-domain share among this many nearest documents
+CONCENTRATION_TOP_N = 10
 
 
 @dataclass
@@ -89,12 +95,10 @@ class Rec:
     title: str
     statement: str
     adapted_text: str
-    cluster_id: int
-    cluster_label: str
-    similarity: float          # raw cosine, student vs statement (0..1)
+    domain: str | None
+    similarity: float          # raw cosine, student vs statement - internal, never shown to students
     composite_score: float     # weighted blend actually used for ranking
     feasibility: float
-    confidence_band: str       # strong | moderate | weak
     diversity_note: str
     explanation: dict[str, Any]
 
@@ -103,16 +107,28 @@ class Rec:
 
 
 @dataclass
+class Routing:
+    domains: list[str]                       # ranking happens only here; [] = nothing to rank in
+    source: str                              # "keyword" | "classifier" | "unrouted"
+    keyword_hits: dict[str, list[str]]
+    probabilities: list[dict[str, Any]]      # classifier output, best first (top 5)
+
+
+@dataclass
 class RecResult:
-    mode: str                  # "routed" | "low_confidence" | "no_signal"
+    mode: str                  # "routed" | "off_topic" | "no_signal"
     message: str
-    routed_cluster: int | None
-    cluster_confidence: float
-    cluster_distribution: list[dict[str, Any]]
+    routed_domains: list[str]
+    routing_source: str
+    domain_probabilities: list[dict[str, Any]]
+    gate_score: float          # mean of the top-3 cosine similarities inside the routed domain(s)
+    gate_threshold: float
     scoring_formula: str
     weights: dict[str, float]
     recommendations: list[Rec]
-    routed_clusters: list[int] = field(default_factory=list)
+    suggested_domains: list[str] = field(default_factory=list)
+    # classifier-routed requests only: largest one-domain share of the 10 nearest documents
+    topic_concentration: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -146,14 +162,6 @@ FEASIBILITY_DOC = (
     "feasibility = length-based scoping proxy: <120 chars -> 0.70, <250 -> 0.85, "
     "250-900 -> 1.00, 900-1400 -> 0.92, >1400 -> 0.80"
 )
-
-
-def _confidence_band(sim: float, strong: float, moderate: float) -> str:
-    if sim >= strong:
-        return "strong"
-    if sim >= moderate:
-        return "moderate"
-    return "weak"
 
 
 def _tokens(text: str) -> list[str]:
@@ -209,21 +217,6 @@ def _term_drivers(
     ]
 
 
-def _cluster_distribution(art: ModelArtifacts, sims: np.ndarray) -> list[dict[str, Any]]:
-    exp = np.exp((sims - sims.max()) * 8.0)
-    soft = exp / exp.sum()
-    return [
-        {
-            "cluster_id": int(c),
-            "label": art.cluster_label(int(c)),
-            "similarity": round(float(sims[c]), 4),
-            "share": round(float(soft[c]), 3),
-            "size": art.cluster_sizes.get(int(c), 0),
-        }
-        for c in np.argsort(sims)[::-1]
-    ]
-
-
 def _mmr(
     candidate_rows: list[int],
     relevance: dict[int, float],
@@ -249,125 +242,175 @@ def _mmr(
     return selected
 
 
+def available_domains(art: ModelArtifacts) -> list[str]:
+    """Domains the active model can route to, in the canonical display order."""
+    if not art.has_domain_router():
+        return []
+    present = set(art.domain_sizes)
+    return [d for d in DOMAINS if d in present] + sorted(present - set(DOMAINS))
+
+
+def route_domains(
+    art: ModelArtifacts, text: str, vec: sparse.csr_matrix, *, split_ratio: float
+) -> Routing:
+    """Keyword map first; the TF-IDF + logistic-regression classifier only when
+    no keyword fires. Two domains when the top two are tied (keywords) or the
+    runner-up has at least ``split_ratio`` of the leader's probability."""
+    if not art.has_domain_router():
+        return Routing([], "unrouted", {}, [])
+
+    probs: list[dict[str, Any]] = []
+    if art.domain_clf is not None and vec.nnz:
+        p = art.domain_clf.predict_proba(vec)[0]
+        probs = [
+            {"domain": str(art.domain_clf.classes_[i]), "probability": round(float(p[i]), 4)}
+            for i in np.argsort(p)[::-1]
+        ]
+    prob_of = {x["domain"]: x["probability"] for x in probs}
+
+    present = set(art.domain_sizes)
+    all_hits = keyword_hits(text)
+    hits = {d: kws for d, kws in all_hits.items() if d in present}
+    if hits:
+        ranked = sorted(hits, key=lambda d: (len(hits[d]), prob_of.get(d, 0.0)), reverse=True)
+        tied = [d for d in ranked if len(hits[d]) == len(hits[ranked[0]])]
+        return Routing(tied[:2], "keyword", hits, probs[:5])
+    if all_hits:
+        # explicitly asked for a domain this corpus has no statements in: no
+        # domains to rank in (recommend() answers off-topic), never a classifier guess
+        return Routing([], "keyword", all_hits, probs[:5])
+
+    if probs:
+        domains = [probs[0]["domain"]]
+        if len(probs) > 1 and probs[1]["probability"] >= split_ratio * probs[0]["probability"]:
+            domains.append(probs[1]["domain"])
+        return Routing(domains, "classifier", {}, probs[:5])
+    return Routing([], "unrouted", {}, [])
+
+
+def _no_match(
+    art: ModelArtifacts,
+    mode: str,
+    routing: Routing,
+    gate_score: float,
+    gate_threshold: float,
+    weights_doc: str,
+    weights: dict[str, float],
+    concentration: float | None = None,
+) -> RecResult:
+    suggestions = available_domains(art)
+    message = "I couldn't find projects that match that."
+    if suggestions:
+        message += f" Try one of these domains: {', '.join(suggestions)}."
+    return RecResult(
+        mode=mode,
+        message=message,
+        routed_domains=routing.domains,
+        routing_source=routing.source,
+        domain_probabilities=routing.probabilities,
+        gate_score=round(gate_score, 4),
+        gate_threshold=gate_threshold,
+        scoring_formula=weights_doc,
+        weights=weights,
+        recommendations=[],
+        suggested_domains=suggestions,
+        topic_concentration=concentration,
+    )
+
+
 def recommend(
     art: ModelArtifacts,
     profile: StudentProfile,
     *,
-    route_threshold: float,
-    serendipity: int,
+    gate_threshold: float,
+    concentration_min: float,
+    split_ratio: float,
     weights: dict[str, float],
     mmr_lambda: float,
     top_k: int,
-    band_strong: float,
-    band_moderate: float,
     exclude_project_ids: set[str] | None = None,
+    route_text: str | None = None,
 ) -> RecResult:
+    """Route to a domain, gate on document evidence, then rank + diversify inside it.
+
+    The gate has two parts. Every request needs the mean of its top-3 cosine
+    similarities inside the routed domain(s) to reach ``gate_threshold``. A
+    request routed by the classifier (no keyword fired) must also hit a coherent
+    topic: at least ``concentration_min`` of its 10 nearest documents in one
+    domain. Off-topic asks ("poetry writing") match a few documents in many
+    domains, so a classifier guess alone is not trusted for them.
+
+    ``route_text`` is what the student actually asked for (the chat message);
+    routing and the gate use it, ranking uses the whole profile. Defaults to
+    the profile text.
+    """
     exclude_project_ids = exclude_project_ids or set()
-    query = correct_typos(profile.query_text(), art.unigram_vocab())
+    vocab = art.unigram_vocab()
+    query = correct_typos(profile.query_text(), vocab)
+    route_query = correct_typos(route_text, vocab) if route_text else query
     student_vec = _student_vector(art, query)
+    route_vec = _student_vector(art, route_query)
 
     weights_doc = (
         f"composite = {weights['relevance']:.2f}*relevance + "
         f"{weights['feasibility']:.2f}*feasibility + {weights['faculty']:.2f}*faculty_match. "
-        f"relevance = cosine(student TF-IDF, statement TF-IDF) / {REL_SCALE:.2f}, capped at 1 "
-        "(a fixed scale, so nothing ever displays as a full or perfect match). "
+        f"relevance = cosine(student TF-IDF, statement TF-IDF) / {REL_SCALE:.2f}, capped at 1. "
         "faculty_match is fixed at 0 until real preference data exists. "
         f"{FEASIBILITY_DOC}"
     )
 
-    # --- no usable signal ------------------------------------------------- #
-    if student_vec.nnz == 0:
-        return RecResult(
-            mode="no_signal",
-            message=(
-                "None of the words in your profile appear in our current corpus vocabulary, "
-                "so we can't compute a meaningful match. Add a few more concrete skills or "
-                "interests (tools, techniques, problem domains) and try again."
-            ),
-            routed_cluster=None,
-            cluster_confidence=0.0,
-            cluster_distribution=[],
-            scoring_formula=weights_doc,
-            weights=weights,
-            recommendations=[],
-        )
-
     # --- route ---------------------------------------------------------- #
-    cluster_sims = np.asarray(student_vec @ art.centroids_unit.T).ravel()
-    top_cluster = int(np.argmax(cluster_sims))
-    cluster_confidence = float(cluster_sims[top_cluster])
-    distribution = _cluster_distribution(art, cluster_sims)
-    routed = cluster_confidence >= route_threshold
+    routing = route_domains(art, route_query, route_vec, split_ratio=split_ratio)
+    if route_vec.nnz == 0 and routing.source != "keyword":
+        return _no_match(art, "no_signal", routing, 0.0, gate_threshold, weights_doc, weights)
+    if not routing.domains:
+        # nothing to rank in: a keyword for a domain this corpus lacks, a
+        # single-domain corpus (no classifier) with no keyword hit, or an
+        # artifact trained before domain routing. Never fall back to the
+        # whole corpus - that is exactly the forced match the gate prevents.
+        return _no_match(art, "off_topic", routing, 0.0, gate_threshold, weights_doc, weights)
 
-    doc_sims_all = np.asarray((student_vec @ art.doc_matrix.T).todense()).ravel()
+    routed = set(routing.domains)
+    candidate_rows = [i for i, d in enumerate(art.doc_domains) if d in routed]
 
-    if routed:
-        # Rank within the top cluster, plus any *near-tie* cluster (>= 85% of the top
-        # centroid similarity, at most one extra) since profiles here often straddle
-        # two quantum subdomains - then a small cross-cluster sample for serendipity.
-        near = [
-            int(c) for c in np.argsort(cluster_sims)[::-1][1:]
-            if cluster_sims[c] >= 0.72 * cluster_confidence
-        ][:1]
-        routed_clusters = [int(top_cluster), *near]
-        in_cluster = [i for i, c in enumerate(art.doc_clusters) if c in routed_clusters]
-        others = [i for i in range(len(art.doc_ids)) if i not in set(in_cluster)]
-        others_sorted = sorted(others, key=lambda i: doc_sims_all[i], reverse=True)
-        serendipity_rows = set(others_sorted[:serendipity])
-        candidate_rows = in_cluster + list(serendipity_rows)
-        mode = "routed"
-        label_list = " + ".join(f"“{art.cluster_label(c)}”" for c in routed_clusters)
-        message = (
-            f"Routed to {label_list} ({len(in_cluster)} statements) with routing confidence "
-            f"{cluster_confidence:.3f}"
-            + (
-                f", plus {len(serendipity_rows)} cross-cluster pick(s) for breadth."
-                if serendipity_rows
-                else "."
-            )
-        )
-    else:
-        routed_clusters = []
-        serendipity_rows = set()
-        candidate_rows = list(range(len(art.doc_ids)))
-        mode = "low_confidence"
-        message = (
-            "We don't have enough matching problem statements in your area yet. "
-            f"The strongest cluster match is only {cluster_confidence:.3f} (below the "
-            f"{route_threshold:.3f} routing threshold), so instead of forcing a match we're "
-            "showing the closest available statements with their real similarity scores. "
-            "Treat these as weak leads, not strong recommendations."
-        )
+    # --- gate: is there real document evidence in the routed domain? ------ #
+    route_sims = np.asarray((route_vec @ art.doc_matrix.T).todense()).ravel()
+    best = np.sort(route_sims[candidate_rows])[::-1][:GATE_TOP_N] if candidate_rows else []
+    gate_score = float(np.mean(best)) if len(best) else 0.0
+    concentration: float | None = None
+    if routing.source == "classifier":
+        nearest = np.argsort(route_sims)[::-1][:CONCENTRATION_TOP_N]
+        shares: dict[str, int] = {}
+        for i in nearest:
+            d = art.doc_domains[i] or ""
+            shares[d] = shares.get(d, 0) + 1
+        concentration = max(shares.values()) / len(nearest)
+    if gate_score < gate_threshold or (concentration is not None and concentration < concentration_min):
+        return _no_match(art, "off_topic", routing, gate_score, gate_threshold, weights_doc, weights,
+                         concentration)
 
     # --- filter + score ------------------------------------------------- #
+    doc_sims_all = np.asarray((student_vec @ art.doc_matrix.T).todense()).ravel()
     pool = [r for r in candidate_rows if art.docs_meta[r].project_id not in exclude_project_ids]
-    # Fixed-scale relevance: cosine / REL_SCALE, clamped to 1. A fixed scale (not
-    # min-max) keeps the weights meaningful without ever manufacturing a "1.0 / perfect
-    # match" for whichever item happens to top the list.
     scored: dict[int, float] = {}
     for row in pool:
         meta = art.docs_meta[row]
         rel_norm = min(1.0, float(doc_sims_all[row]) / REL_SCALE)
-        feas = feasibility_score(meta.statement)
-        composite = (
+        scored[row] = (
             weights["relevance"] * rel_norm
-            + weights["feasibility"] * feas
+            + weights["feasibility"] * feasibility_score(meta.statement)
             + weights["faculty"] * 0.0
         )
-        scored[row] = composite
 
+    label = " + ".join(f"“{d}”" for d in routing.domains)
+    message = (
+        f"Matched {label} by {routing.source}"
+        + (f" ({', '.join(kw for kws in routing.keyword_hits.values() for kw in kws)})"
+           if routing.keyword_hits else "")
+        + "."
+    )
     if not scored:
-        return RecResult(
-            mode="low_confidence" if routed else mode,
-            message="Every candidate statement was filtered out by your current constraints.",
-            routed_cluster=top_cluster if routed else None,
-            routed_clusters=routed_clusters,
-            cluster_confidence=round(cluster_confidence, 4),
-            cluster_distribution=distribution,
-            scoring_formula=weights_doc,
-            weights=weights,
-            recommendations=[],
-        )
+        message = f"{message} Every matching statement was filtered out by your current constraints."
 
     ranked_rows = sorted(scored, key=lambda r: scored[r], reverse=True)[: max(top_k * 4, 20)]
     picked = _mmr(ranked_rows, scored, art.doc_matrix, top_k, mmr_lambda)
@@ -377,12 +420,10 @@ def recommend(
     for pos, row in enumerate(picked, start=1):
         meta = art.docs_meta[row]
         sim = float(doc_sims_all[row])
-        drivers = _term_drivers(art, student_vec, row)
-        item_cluster = int(art.doc_clusters[row])
         if pos == 1:
-            note = "closest match to your profile"
-        elif row in serendipity_rows or item_cluster not in routed_clusters:
-            note = f"cross-domain pick from the “{art.cluster_label(item_cluster)}” cluster"
+            note = "closest match to your request"
+        elif len(routing.domains) > 1 and art.doc_domains[row] != routing.domains[0]:
+            note = f"from the related {art.doc_domains[row]} domain"
         elif sim_rank.get(row, 99) >= 2:
             note = "kept for spread (MMR), not just raw score"
         else:
@@ -394,12 +435,10 @@ def recommend(
                 title=meta.title,
                 statement=meta.statement,
                 adapted_text=_adapt_text(meta, profile),
-                cluster_id=int(art.doc_clusters[row]),
-                cluster_label=art.cluster_label(int(art.doc_clusters[row])),
+                domain=art.doc_domains[row],
                 similarity=round(sim, 4),
                 composite_score=round(scored[row], 4),
                 feasibility=round(feasibility_score(meta.statement), 3),
-                confidence_band=_confidence_band(sim, band_strong, band_moderate),
                 diversity_note=note,
                 explanation={
                     "cosine_similarity": round(sim, 4),
@@ -407,34 +446,31 @@ def recommend(
                     "feasibility_basis": f"statement length = {len(meta.statement or '')} chars",
                     "composite_score": round(scored[row], 4),
                     "weights": weights,
-                    "top_term_drivers": drivers,
+                    "top_term_drivers": _term_drivers(art, student_vec, row),
                     "routing": {
-                        "mode": mode,
-                        "routed_clusters": routed_clusters,
-                        "cluster_confidence": round(cluster_confidence, 4),
-                        "threshold": route_threshold,
+                        "domains": routing.domains,
+                        "source": routing.source,
+                        "keyword_hits": routing.keyword_hits,
+                        "gate_score": round(gate_score, 4),
+                        "gate_threshold": gate_threshold,
+                        "topic_concentration": concentration,
                     },
                 },
             )
         )
 
-    if mode == "low_confidence" and recs and recs[0].similarity >= band_strong:
-        message += (
-            f" (Result #{recs[0].rank} is nonetheless a close individual match — cosine "
-            f"{recs[0].similarity:.3f}. The low confidence is about overall domain coverage, "
-            "not that specific statement.)"
-        )
-
     return RecResult(
-        mode=mode,
+        mode="routed",
         message=message,
-        routed_cluster=top_cluster if routed else None,
-        routed_clusters=routed_clusters,
-        cluster_confidence=round(cluster_confidence, 4),
-        cluster_distribution=distribution,
+        routed_domains=routing.domains,
+        routing_source=routing.source,
+        domain_probabilities=routing.probabilities,
+        gate_score=round(gate_score, 4),
+        gate_threshold=gate_threshold,
         scoring_formula=weights_doc,
         weights=weights,
         recommendations=recs,
+        topic_concentration=concentration,
     )
 
 
@@ -467,6 +503,9 @@ _STOP = {
 class RefineParse:
     negative: list[str]
     positive: list[str]
+    # the message adjusts the current results ("more X", "avoid Y", "focus on Z")
+    # rather than making a fresh ask
+    modifier: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -479,6 +518,7 @@ def parse_refinement(text: str, vocabulary: set[str] | None = None) -> RefinePar
     # polarity carries across "and"/comma-joined clauses that have no marker of
     # their own: "avoid AR/VR and simulation" -> both negative.
     carried = "positive"
+    modifier = False
 
     for chunk in re.split(r"[,;]|\band\b|\bbut\b", text, flags=re.IGNORECASE):
         chunk = chunk.strip()
@@ -486,6 +526,7 @@ def parse_refinement(text: str, vocabulary: set[str] | None = None) -> RefinePar
             continue
         neg = bool(_NEG_PAT.search(chunk))
         pos = bool(_POS_PAT.search(chunk))
+        modifier = modifier or neg or pos
         cleaned = _POS_PAT.sub("", _NEG_PAT.sub("", chunk)).strip()
         keywords = [w for w in _tokens(cleaned) if w not in _STOP and len(w) > 2]
         # keep short multi-word phrases too (e.g. "ar/vr", "web based") - built
@@ -513,6 +554,7 @@ def parse_refinement(text: str, vocabulary: set[str] | None = None) -> RefinePar
     return RefineParse(
         negative=list(dict.fromkeys(negative)),
         positive=list(dict.fromkeys(positive)),
+        modifier=modifier,
     )
 
 
@@ -521,13 +563,12 @@ def refine(
     profile: StudentProfile,
     constraint_text: str,
     *,
-    route_threshold: float,
-    serendipity: int,
+    gate_threshold: float,
+    concentration_min: float,
+    split_ratio: float,
     weights: dict[str, float],
     mmr_lambda: float,
     top_k: int,
-    band_strong: float,
-    band_moderate: float,
 ) -> tuple[RecResult, RefineParse]:
     parse = parse_refinement(constraint_text, art.unigram_vocab())
 
@@ -539,21 +580,28 @@ def refine(
         preferred_outcome=profile.preferred_outcome,
     )
 
+    # What the routing + off-topic gate look at:
+    #  - the message names a domain ("suggest a blockchain project", "more web-based")
+    #    -> the message alone, so an explicit ask is never overridden by the profile
+    #  - a modifier with no domain keyword ("more optimization, avoid AR/VR"), or
+    #    nothing positive at all -> the profile plus the message: it adjusts the
+    #    current context rather than asking about something new
+    #  - otherwise a fresh ask ("cooking recipes") -> the message alone, judged as
+    #    strictly as any cold query; the profile can't vouch for an off-topic ask
+    # Negative terms never take part ("no web stuff" must not route to Web/Mobile).
+    asked = " ".join(parse.positive)
+    in_context = not asked or (parse.modifier and not keyword_hits(asked))
+
     result = recommend(
         art,
         augmented,
-        route_threshold=route_threshold,
-        # A refine() call always carries explicit intent from the user's own
-        # words - unlike a cold-start recommend(), padding the results with
-        # cross-cluster "breadth" picks here means silently mixing in
-        # off-topic statements (e.g. logistics content when someone asked
-        # specifically for "the medical field"). Keep results in-domain.
-        serendipity=0,
+        gate_threshold=gate_threshold,
+        concentration_min=concentration_min,
+        split_ratio=split_ratio,
         weights=weights,
         mmr_lambda=mmr_lambda,
         top_k=max(top_k * 3, 12),
-        band_strong=band_strong,
-        band_moderate=band_moderate,
+        route_text=None if in_context else asked,
     )
 
     if parse.negative:

@@ -59,10 +59,8 @@ export default function AboutPage() {
         {status?.silhouette_by_k && Object.keys(status.silhouette_by_k).length
           ? Object.keys(status.silhouette_by_k).slice(-1)[0]
           : "10"}{" "}
-        and keep the k with the best cosine silhouette score. Because roughly 98% of the current
-        catalogue is quantum-computing work, this matters: clustering lets a non-quantum profile be
-        compared against the right small region instead of being averaged against 180 quantum
-        statements.
+        and keep the k with the best cosine silhouette score. These clusters are a descriptive
+        topic map for the admin views only - they no longer decide where a request is routed.
         {status?.clusters && status.clusters.length > 0 && (
           <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
             {status.clusters.map((c) => (
@@ -75,32 +73,34 @@ export default function AboutPage() {
         )}
       </Section>
 
-      <Section title="3 · Taking a bearing, then ranking">
-        Your profile vector is compared to each cluster centre. If the closest one clears a
-        confidence threshold, we rank the statements inside that region by cosine similarity, blend
-        in a simple length-based feasibility proxy, and spread the top five with Maximal Marginal
-        Relevance so they aren&rsquo;t five versions of one idea. If nothing clears the threshold,
-        you get an honest low-confidence result &mdash; the closest statements, labelled as weak,
-        with their real scores &mdash; not a forced match.
+      <Section title="3 · Picking a domain, then ranking">
+        Every statement carries a domain. Your request is routed by a keyword map first
+        (&ldquo;react&rdquo; &rarr; Web/Mobile, &ldquo;arduino&rdquo; &rarr; IoT); if no keyword
+        fires, a TF-IDF + logistic-regression classifier trained on the catalogue picks the domain.
+        Before anything is shown, the closest statements inside that domain must be genuinely close
+        to your words &mdash; and for a classifier guess, your nearest statements must cluster in one
+        domain rather than scatter. If not, you get no projects, just domains to try. Otherwise we
+        rank inside the domain, blend in a simple length-based feasibility proxy, and spread the top
+        five with Maximal Marginal Relevance so they aren&rsquo;t five versions of one idea.
       </Section>
 
       <Section title="4 · What you see is retrieved, not written">
         The text on each recommendation is the real problem statement from the catalogue, wrapped in
         a fixed sentence that names the skill and interest of yours that matched. Nothing is
-        generated. Every card shows a real Project ID you can look up and the real cosine number
-        that ranked it.
+        generated. Every card shows a real Project ID you can look up, its domain, and the words of
+        yours that matched it.
       </Section>
 
       <h2 className="mt-10 font-display text-2xl">Standing disclosures</h2>
       <ul className="mt-3 space-y-2 text-sm text-charcoal-text/80">
         <Disclosure>
-          Every recommendation cites a real <span className="data-token">project_id</span> and its
-          real similarity score. There is no &ldquo;perfect&rdquo; or &ldquo;guaranteed&rdquo;
-          match, and the dial cannot read full.
+          Every recommendation cites a real <span className="data-token">project_id</span>. Match
+          scores are used internally for ranking and are not shown as a rating; there is no
+          &ldquo;perfect&rdquo; or &ldquo;guaranteed&rdquo; match.
         </Disclosure>
         <Disclosure>
-          When routing confidence is below threshold, the workspace says so explicitly and marks the
-          results as weak leads.
+          When there isn&rsquo;t enough evidence for a request, the workspace shows no projects and
+          suggests domains to try instead.
         </Disclosure>
         <Disclosure>
           Recommendations are retrieval + adaptation over{" "}

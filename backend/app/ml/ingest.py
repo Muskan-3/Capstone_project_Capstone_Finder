@@ -37,6 +37,14 @@ _HEADER_ALIASES = {
     "title": {"title", "problem title", "project title"},
     "statement": {"problem statement", "statement", "problem_statement", "description"},
 }
+# optional descriptive columns - stored and shown, never used for matching
+_OPTIONAL_ALIASES = {
+    "domain": {"domain", "area"},
+    "field": {"field", "branch", "discipline"},
+    "difficulty": {"difficulty", "level", "difficulty level"},
+    "source": {"source", "origin", "source name"},
+}
+OPTIONAL_KEYS = tuple(_OPTIONAL_ALIASES)
 
 
 @dataclass
@@ -48,6 +56,10 @@ class CleanedRow:
     flag_reason: str | None
     original_project_id: str | None
     source_row: int  # 1-based row number in the source sheet, for the review queue
+    domain: str | None = None
+    field: str | None = None
+    difficulty: str | None = None
+    source: str | None = None
 
 
 @dataclass
@@ -88,9 +100,16 @@ def _match_columns(header: list[Any]) -> dict[str, int] | None:
             if name in aliases:
                 mapping[key] = idx
                 break
-    if {"project_id", "title", "statement"} <= mapping.keys():
-        return mapping
-    return None
+    if not {"project_id", "title", "statement"} <= mapping.keys():
+        return None
+    taken = set(mapping.values())
+    for key, aliases in _OPTIONAL_ALIASES.items():
+        for idx, name in enumerate(normed):
+            if name in aliases and idx not in taken:
+                mapping[key] = idx
+                taken.add(idx)
+                break
+    return mapping
 
 
 def _clean_text(value: Any) -> str | None:
@@ -150,19 +169,33 @@ def _read_csv(data: bytes) -> tuple[str, list[list[Any]]]:
     raise ValueError("Could not find ProjectID / Title / Problem Statement columns in the CSV.")
 
 
+def project_table(header: list[Any], body: list[list[Any]]) -> list[list[Any]]:
+    """Map an already-parsed table (header + data rows) to raw rows for ``clean()``.
+
+    For callers that read the file themselves (e.g. a bulk-import script); the
+    header must be the first row of the file, so data starts at row 2.
+    """
+    mapping = _match_columns(header)
+    if not mapping:
+        raise ValueError(
+            f"Could not find ProjectID / Title / Problem Statement columns in {list(header)}."
+        )
+    return _project(body, mapping, start_row=2)
+
+
 def _project(
     body: list[list[Any]], mapping: dict[str, int], start_row: int
 ) -> list[list[Any]]:
     out: list[list[Any]] = []
     for offset, row in enumerate(body):
         def cell(key: str) -> Any:
-            idx = mapping[key]
-            return row[idx] if idx < len(row) else None
+            idx = mapping.get(key)
+            return row[idx] if idx is not None and idx < len(row) else None
 
         pid, title, stmt = cell("project_id"), cell("title"), cell("statement")
         if pid is None and title is None and stmt is None:
             continue  # trailing blank row
-        out.append([pid, title, stmt, start_row + offset])
+        out.append([pid, title, stmt, start_row + offset, *(cell(k) for k in OPTIONAL_KEYS)])
     return out
 
 
@@ -200,8 +233,9 @@ def clean(
     cleaned: list[CleanedRow] = []
     seen_ids: dict[str, list[int]] = {}  # base project_id -> indices into `cleaned`
 
-    for pid_raw, title_raw, stmt_raw, source_row in raw_rows:
+    for pid_raw, title_raw, stmt_raw, source_row, *extra in raw_rows:
         report.total_rows += 1
+        optional = dict(zip(OPTIONAL_KEYS, (_clean_text(v) for v in extra)))
         base_pid = _clean_text(pid_raw) or f"UNKNOWN-ROW-{source_row}"
         title = _clean_text(title_raw)
         statement = _clean_text(stmt_raw)
@@ -247,6 +281,7 @@ def clean(
             flag_reason=flag_reason,
             original_project_id=original_pid,
             source_row=source_row,
+            **optional,
         )
         cleaned.append(row)
 

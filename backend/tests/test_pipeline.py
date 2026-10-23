@@ -5,18 +5,18 @@ from __future__ import annotations
 import pytest
 
 from app.config import settings
+from app.ml.domains import QUANTUM, infer_domain, keyword_domains
 from app.ml.ingest import clean, read_source
 from app.ml.pipeline import DocMeta, train
 from app.ml.recommender import StudentProfile, correct_typos, parse_refinement, recommend, refine
 
 _KW = dict(
-    route_threshold=settings.route_confidence_threshold,
-    serendipity=settings.serendipity_cross_cluster,
+    gate_threshold=settings.gate_threshold,
+    concentration_min=settings.topic_concentration_min,
+    split_ratio=settings.domain_split_ratio,
     weights={"relevance": 0.8, "feasibility": 0.2, "faculty": 0.0},
     mmr_lambda=settings.mmr_lambda,
     top_k=5,
-    band_strong=settings.band_strong,
-    band_moderate=settings.band_moderate,
 )
 
 
@@ -44,8 +44,11 @@ def test_quantum_profile_is_routed(art):
     )
     res = recommend(art, p, **_KW)
     assert res.mode == "routed"
+    assert res.routed_domains == [QUANTUM] and res.routing_source == "keyword"
     assert len(res.recommendations) == 5
+    assert all(r.domain == QUANTUM for r in res.recommendations)
     assert all(r.similarity < 1.0 for r in res.recommendations)  # never a "perfect" match
+    assert all("confidence_band" not in r.as_dict() for r in res.recommendations)
 
 
 def test_non_quantum_profile_not_force_matched(art):
@@ -54,10 +57,20 @@ def test_non_quantum_profile_not_force_matched(art):
         interests=["web design", "accessibility", "developer tooling"],
     )
     res = recommend(art, p, **_KW)
-    assert res.mode in {"low_confidence", "no_signal"}
-    assert res.cluster_confidence < settings.route_confidence_threshold
-    # if anything is shown it must carry a real, low score - not dressed up as strong
-    assert all(r.confidence_band in {"weak", "moderate"} for r in res.recommendations)
+    # Web/Mobile keywords fire, but this corpus has no Web/Mobile statements:
+    # nothing is shown - no "closest available" fallback - and domains are suggested
+    assert res.mode in {"off_topic", "no_signal"}
+    assert res.recommendations == []
+    assert res.suggested_domains
+
+
+@pytest.mark.parametrize("query", ["cooking recipes", "football", "asdfgh"])
+def test_off_topic_returns_no_projects(art, query):
+    res = recommend(art, StudentProfile(interests=[query]), **_KW)
+    assert res.mode in {"off_topic", "no_signal"}
+    assert res.recommendations == []
+    assert QUANTUM in res.suggested_domains
+    assert "Try one of these domains" in res.message
 
 
 def test_every_recommendation_cites_a_real_project_id(art):
@@ -104,6 +117,48 @@ def test_chat_refine_does_not_leak_cross_domain_results(art):
     )
     assert "quantum" in parse.positive  # the typo was corrected
     if res.mode == "routed":
-        # every result must come from a cluster the routing actually chose -
+        # every result must come from a domain the routing actually chose -
         # none smuggled in from an unrelated domain "for breadth"
-        assert all(r.cluster_id in res.routed_clusters for r in res.recommendations)
+        assert all(r.domain in res.routed_domains for r in res.recommendations)
+
+
+_QUANTUM_STUDENT = StudentProfile(skills=["qiskit", "python"], interests=["quantum computing"])
+
+
+def test_chat_modifier_stays_in_profile_context(art):
+    # no domain keyword in the message, but it adjusts the current results
+    res, parse = refine(art, _QUANTUM_STUDENT, "show me more optimization ideas, avoid AR/VR", **_KW)
+    assert parse.modifier
+    assert res.mode == "routed" and res.routed_domains == [QUANTUM]
+
+
+def test_chat_fresh_off_topic_ask_is_not_vouched_for_by_profile(art):
+    # a quantum profile must not turn "cooking recipes" into quantum results
+    res, parse = refine(art, _QUANTUM_STUDENT, "cooking recipes", **_KW)
+    assert not parse.modifier
+    assert res.mode in {"off_topic", "no_signal"}
+    assert res.recommendations == []
+
+
+@pytest.mark.parametrize("query, domain", [
+    ("website development", "Web/Mobile"),
+    ("flutter apps", "Web/Mobile"),
+    ("IoT sensors project", "IoT"),
+    ("smart contracts", "Blockchain"),
+    ("heat exchanger CFD", "Mechanical Engineering"),
+    ("quantum cryptography", QUANTUM),
+])
+def test_keyword_router(query, domain):
+    assert keyword_domains(query)[0][0] == domain
+
+
+def test_keyword_router_ignores_substrings():
+    # "ai" inside "maintain", "app" inside "happy" must not fire
+    assert keyword_domains("maintain a happy garden") == []
+
+
+def test_infer_domain_rules():
+    assert infer_domain("GEN-CYB-012", "Detect malware", "")[0] == "Cybersecurity"
+    assert infer_domain("P1", "Land cover classification using QSVM", "")[0] == QUANTUM
+    assert infer_domain("P2", "Bridge health monitoring", "soil and structural load study")[0] == "Civil Engineering"
+    assert infer_domain("P3", "Untitled", "nothing to go on here")[0] is None

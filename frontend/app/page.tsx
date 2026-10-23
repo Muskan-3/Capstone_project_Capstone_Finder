@@ -19,8 +19,8 @@ const FEATURES = [
   },
   {
     icon: <IconGauge />,
-    title: "Honest confidence",
-    body: "Every match ships with its real cosine similarity. No domain fit yet? It says so, instead of forcing a weak match.",
+    title: "No forced matches",
+    body: "Ask about something the catalogue doesn't cover and you get no projects - just the domains it can help with.",
   },
   {
     icon: <IconLayers />,
@@ -36,7 +36,7 @@ const FEATURES = [
 
 const COMPARISON = [
   { label: "Sources its answers from", them: "Whatever it learned in training", us: "Your department's real catalogue" },
-  { label: "Shows a similarity score", them: false, us: true },
+  { label: "Shows you which of your words matched", them: false, us: true },
   { label: "Cites a real Project ID", them: false, us: true },
   { label: "Says “not enough data” when true", them: false, us: true },
   { label: "Runs without an internet connection", them: false, us: true },
@@ -46,11 +46,11 @@ const COMPARISON = [
 const FAQS = [
   {
     q: "Is this powered by ChatGPT or another LLM?",
-    a: "No. There is no hosted model anywhere in the pipeline. Matching runs on TF-IDF vectors, KMeans clustering, and cosine similarity - all classical, all computed locally from your department's own statements.",
+    a: "No. There is no hosted model anywhere in the pipeline. Matching runs on a keyword domain map, a TF-IDF + logistic-regression domain classifier, and cosine similarity - all classical, all computed locally from your department's own statements.",
   },
   {
     q: "What happens if my interests don't fit the catalogue?",
-    a: "You get told, plainly. If nothing clears the confidence threshold, the chat says so and shows the closest available statements labelled as weak leads with their real scores - never a forced match dressed up as a good one.",
+    a: "You get told, plainly. If there isn't solid evidence for your request in the catalogue, the chat shows no projects and suggests the domains it does cover - never a forced match dressed up as a good one.",
   },
   {
     q: "Where does my profile data go?",
@@ -75,12 +75,12 @@ const STAGES = [
   {
     bearing: "E",
     head: "Take a bearing",
-    body: "We measure how close you sit to each domain cluster. Not close enough anywhere? You'll be told plainly, not pointed somewhere wrong.",
+    body: "Your words pick a domain - by keyword, or by a classifier trained on the catalogue. No real evidence for it? You'll be told plainly, not pointed somewhere wrong.",
   },
   {
     bearing: "S",
     head: "Plot the nearest routes",
-    body: "Inside the matched domain, statements are ranked by real cosine similarity and spread for variety - never five versions of one idea.",
+    body: "Inside the matched domain, statements are ranked by how closely they match you and spread for variety - never five versions of one idea.",
   },
   {
     bearing: "W",

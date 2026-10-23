@@ -46,14 +46,15 @@ PROFILES = {
 
 
 def _fmt(result) -> None:
-    print(f"    mode: {result.mode}   routing confidence: {result.cluster_confidence}")
+    print(f"    mode: {result.mode}   routed: {' + '.join(result.routed_domains) or '-'} "
+          f"[{result.routing_source}]   gate score: {result.gate_score} "
+          f"(threshold {result.gate_threshold})   concentration: {result.topic_concentration}")
     print(f"    {result.message}")
-    top = result.cluster_distribution[:3]
-    print("    cluster distribution (top 3): "
-          + ", ".join(f"[{c['label']}] sim={c['similarity']} n={c['size']}" for c in top))
+    top = result.domain_probabilities[:3]
+    print("    classifier (top 3): " + ", ".join(f"{p['domain']}={p['probability']}" for p in top))
     for rec in result.recommendations:
-        print(f"      #{rec.rank}  cos={rec.similarity:<6}  {rec.confidence_band:<8}  "
-              f"[{rec.cluster_label}]  {rec.project_id}  {rec.title[:54]}")
+        print(f"      #{rec.rank}  cos={rec.similarity:<6}  [{rec.domain}]  "
+              f"{rec.project_id}  {rec.title[:54]}")
     if not result.recommendations:
         print("      (no items returned - honest empty state)")
 
@@ -76,8 +77,9 @@ def main() -> int:
               f"| {', '.join(art.cluster_terms[cid][:6])}")
 
     kw = dict(
-        route_threshold=settings.route_confidence_threshold,
-        serendipity=settings.serendipity_cross_cluster,
+        gate_threshold=settings.gate_threshold,
+        concentration_min=settings.topic_concentration_min,
+        split_ratio=settings.domain_split_ratio,
         weights={
             "relevance": settings.weight_relevance,
             "feasibility": settings.weight_feasibility,
@@ -85,8 +87,6 @@ def main() -> int:
         },
         mmr_lambda=settings.mmr_lambda,
         top_k=settings.top_k,
-        band_strong=settings.band_strong,
-        band_moderate=settings.band_moderate,
     )
 
     for name, profile in PROFILES.items():

@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 
 from .config import settings
 from .db import SessionLocal, init_db
+from .generate_router import router as generate_router
 from .models import ProblemStatement
 from .routers import corpus, faculty, feedback, model, recommendations, students
 
@@ -62,6 +63,7 @@ app.add_middleware(
 
 for r in (students, recommendations, corpus, model, feedback, faculty):
     app.include_router(r.router)
+app.include_router(generate_router)
 
 
 @app.get("/api/health", tags=["meta"])

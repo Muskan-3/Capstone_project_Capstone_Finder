@@ -72,12 +72,17 @@ class RefineRequest(BaseModel):
 class RecommendationResponse(BaseModel):
     student_id: int
     model_version: int | None
-    mode: str
+    mode: str  # routed | off_topic | no_signal | smalltalk | generated
     message: str
-    routed_cluster: int | None
-    routed_clusters: list[int] = Field(default_factory=list)
-    cluster_confidence: float
-    cluster_distribution: list[dict[str, Any]]
+    # domain routing; scores are internal (logging / admin), the student UI hides them
+    routed_domains: list[str] = Field(default_factory=list)
+    routing_source: str = "none"  # keyword | classifier | unrouted | none
+    domain_probabilities: list[dict[str, Any]] = Field(default_factory=list)
+    gate_score: float = 0.0
+    gate_threshold: float = 0.0
+    topic_concentration: float | None = None
+    # off_topic / no_signal: domains the student could ask about instead
+    suggested_domains: list[str] = Field(default_factory=list)
     scoring_formula: str
     weights: dict[str, float]
     faculty_matching_active: bool = False
@@ -86,6 +91,8 @@ class RecommendationResponse(BaseModel):
     )
     recommendations: list[dict[str, Any]]
     refinement: dict[str, Any] | None = None
+    # generate mode only: offline-generated ideas, never rows from the corpus
+    generated_ideas: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -102,6 +109,10 @@ class ProblemStatementOut(BaseModel):
     flag_reason: str | None
     source_batch: str
     original_project_id: str | None
+    domain: str | None = None
+    field: str | None = None
+    difficulty: str | None = None
+    source: str | None = None
     created_at: datetime
     updated_at: datetime
 

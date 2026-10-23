@@ -155,6 +155,10 @@ async def upload_batch(
                 flag_reason=r.flag_reason,
                 source_batch=tag,
                 original_project_id=r.original_project_id or (r.project_id if pid != r.project_id else None),
+                domain=r.domain,
+                field=r.field,
+                difficulty=r.difficulty,
+                source=r.source,
             )
         )
         inserted += 1

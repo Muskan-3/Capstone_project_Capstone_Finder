@@ -76,10 +76,24 @@ _TASK_HINT = re.compile(
 )
 
 
+# explicit requests for NEW ideas only: a generate verb aimed at ideas/projects,
+# or "new/fresh/novel ... ideas". "suggest projects" / "I want to create a web app"
+# stay on the recommend path.
+_IDEA_NOUN = r"(?:project\s+)?(?:ideas?|projects?|topics?|problem\s*statements?)"
+_GENERATE = re.compile(
+    # up to 3 plain words between the verb and the noun ("create some advanced
+    # project ideas"); punctuation breaks the gap, so "create a web app, suggest
+    # projects" stays a recommend request
+    rf"\b(?:generate|create|brainstorm|invent|come\s+up\s+with)\s+(?:[a-z0-9-]+\s+){{0,3}}{_IDEA_NOUN}\b"
+    rf"|\b(?:new|fresh|novel|original|unique)\s+{_IDEA_NOUN}\b",
+    re.IGNORECASE,
+)
+
+
 @dataclass
 class Route:
-    destination: str  # "smalltalk" | "task"
-    intent: str       # greeting | identity | wellbeing | thanks | farewell | offtopic | recommend
+    destination: str  # "smalltalk" | "task" | "generate"
+    intent: str       # greeting | identity | wellbeing | thanks | farewell | offtopic | recommend | generate
 
 
 def classify(message: str) -> Route:
@@ -87,6 +101,8 @@ def classify(message: str) -> Route:
     if not text:
         return Route("task", "recommend")
 
+    if _GENERATE.search(text):
+        return Route("generate", "generate")
     if _TASK_HINT.search(text):
         return Route("task", "recommend")
     if _IDENTITY.search(text):
@@ -126,10 +142,12 @@ def respond(intent: str, name: str | None = None) -> str:
             f"I'm {ASSISTANT_NAME}, a project-matching assistant. I search your "
             "department's real catalogue of capstone problem statements and rank the "
             "ones that fit your skills and interests - each with a real similarity "
-            "score. I don't do general chat or generate project ideas myself.",
+            "score. If you explicitly ask me to generate new ideas, I'll also draft "
+            "fresh ones - clearly labelled as AI-generated, not from the catalogue.",
             f"I'm {ASSISTANT_NAME}. My only job is helping you find a capstone problem "
             "statement: you tell me what you know and what you're into, I retrieve the "
-            "closest real matches from the catalogue. That's the whole scope.",
+            "closest real matches from the catalogue. Ask me to \"generate ideas on IoT\" "
+            "and I'll draft new ones instead, labelled as AI-generated.",
         ],
         "wellbeing": [
             f"Doing well, thanks for asking{', ' + fn if fn else ''}! What kind of "

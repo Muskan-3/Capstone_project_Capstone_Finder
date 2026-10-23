@@ -2,6 +2,7 @@ import type {
   CorpusPage,
   FacultyPreference,
   FacultyPreferenceList,
+  GeneratedIdea,
   ModelStatus,
   ModelVersion,
   ProblemStatement,
@@ -84,6 +85,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ student_id, constraint, exclude_project_ids }),
     }),
+
+  generateOptions: () =>
+    req<{ domains: { name: string; keywords: string[] }[]; levels: string[]; default_level: string }>(
+      "/api/generate/options",
+    ),
+
+  generate: (domain: string, level = "Intermediate", count = 3, interests = "") =>
+    req<{ domain: string; level: string; label: string; ideas: GeneratedIdea[]; note: string }>(
+      "/api/generate",
+      { method: "POST", body: JSON.stringify({ domain, level, count, interests }) },
+    ),
 
   feedback: (recommendation_id: number, verdict: "accept" | "reject") =>
     req<unknown>("/api/feedback", {

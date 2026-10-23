@@ -24,10 +24,12 @@ export interface RecExplanation {
   weights: Record<string, number>;
   top_term_drivers: TermDriver[];
   routing: {
-    mode: string;
-    routed_clusters: number[];
-    cluster_confidence: number;
-    threshold: number;
+    domains: string[];
+    source: "keyword" | "classifier" | "unrouted";
+    keyword_hits: Record<string, string[]>;
+    gate_score: number;
+    gate_threshold: number;
+    topic_concentration: number | null;
   };
 }
 
@@ -37,40 +39,48 @@ export interface Recommendation {
   title: string;
   statement: string;
   adapted_text: string;
-  cluster_id: number;
-  cluster_label: string;
+  domain: string | null;
+  /** internal ranking numbers - sent by the API, never displayed to students */
   similarity: number;
   composite_score: number;
   feasibility: number;
-  confidence_band: "strong" | "moderate" | "weak";
   diversity_note: string;
   explanation: RecExplanation;
   recommendation_id?: number;
+  short_description?: string;
+  /** where the statement came from (upload `source` column, else its batch) */
+  source?: string | null;
+  field?: string | null;
+  difficulty?: string | null;
 }
 
-export interface ClusterDist {
-  cluster_id: number;
+/** Generate mode: a new idea from the offline generator. Deliberately has no
+ *  project_id - it is not a catalogue row. */
+export interface GeneratedIdea {
+  title: string;
+  description: string;
+  domain: string;
+  level: string;
+  novelty: number | null;
   label: string;
-  similarity: number;
-  share: number;
-  size: number;
 }
 
 export interface RecommendationResponse {
   student_id: number;
   model_version: number | null;
-  mode: "routed" | "low_confidence" | "no_signal" | "smalltalk";
+  mode: "routed" | "off_topic" | "no_signal" | "smalltalk" | "generated";
   message: string;
-  routed_cluster: number | null;
-  routed_clusters: number[];
-  cluster_confidence: number;
-  cluster_distribution: ClusterDist[];
+  routed_domains: string[];
+  routing_source: string;
+  /** off_topic / no_signal: domains to suggest instead (no projects are returned) */
+  suggested_domains: string[];
   scoring_formula: string;
   weights: Record<string, number>;
   faculty_matching_active: boolean;
   faculty_matching_note: string;
   recommendations: Recommendation[];
   refinement?: { negative: string[]; positive: string[] } | null;
+  generated_ideas?: GeneratedIdea[];
 }
 
 export interface ProblemStatement {
@@ -84,6 +94,10 @@ export interface ProblemStatement {
   flag_reason: string | null;
   source_batch: string;
   original_project_id: string | null;
+  domain?: string | null;
+  field?: string | null;
+  difficulty?: string | null;
+  source?: string | null;
   created_at: string;
   updated_at: string;
 }

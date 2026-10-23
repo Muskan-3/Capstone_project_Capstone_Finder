@@ -18,35 +18,30 @@ export const shortDate = (iso: string | null) => {
       });
 };
 
-export const bandLabel: Record<string, string> = {
-  strong: "strong signal",
-  moderate: "moderate signal",
-  weak: "weak signal",
-};
-
 /**
  * Turn the backend's precise-but-technical `message`/`refinement` payload
  * into one natural sentence for the chat bubble. The full technical message
  * is never discarded - it's kept as `detail` and shown behind a toggle -
- * this is purely a friendlier headline, not a different claim.
+ * this is purely a friendlier headline, not a different claim. No scores:
+ * those stay internal.
  */
 export function friendlyLead(res: {
   mode: string;
-  cluster_confidence: number;
-  cluster_distribution: { label: string }[];
+  routed_domains: string[];
+  suggested_domains: string[];
   refinement?: { negative: string[]; positive: string[] } | null;
+  recommendations?: unknown[];
 }): string {
-  if (res.mode === "no_signal") {
-    return "I couldn't match any of that to the catalogue's vocabulary - try naming a specific tool, technique, or problem domain.";
+  const shown = res.recommendations?.length ?? 0;
+  if (res.mode === "off_topic" || res.mode === "no_signal") {
+    const domains = res.suggested_domains.length ? ` Try one of these domains: ${res.suggested_domains.join(", ")}.` : "";
+    return `I couldn't find projects that match that.${domains}`;
   }
-  if (res.mode === "low_confidence") {
-    return (
-      `I don't have a strong match for that yet (closest domain fit: ${fmt(res.cluster_confidence)}). ` +
-      "Here are the nearest statements, shown with their real scores - treat them as weak leads, not recommendations."
-    );
+  if (shown === 0) {
+    return "Everything that matched was filtered out by your constraints - try loosening one.";
   }
-  const domain = res.cluster_distribution[0]?.label;
-  let lead = domain ? `Closest domain: “${domain}”.` : "Here's what I found.";
+  const domain = res.routed_domains.join(" + ");
+  let lead = domain ? `From ${domain}:` : "Here's what I found.";
   if (res.refinement) {
     const bits: string[] = [];
     if (res.refinement.positive.length) {

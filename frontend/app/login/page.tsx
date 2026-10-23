@@ -97,8 +97,8 @@ export default function LoginPage() {
           <CompassMark size={420} />
         </div>
         <div className="float-a pointer-events-none absolute left-14 top-40 hidden rounded-xl border px-3 py-2 backdrop-blur xl:block" style={{ borderColor: "var(--ink-hairline)", background: "rgba(255,255,255,0.06)" }}>
-          <p className="text-[10px]" style={{ color: "var(--on-ink-dim)" }}>Real similarity</p>
-          <p className="data-token text-sm" style={{ color: "var(--on-ink-accent)" }}>0.236 · strong</p>
+          <p className="text-[10px]" style={{ color: "var(--on-ink-dim)" }}>Matched domain</p>
+          <p className="data-token text-sm" style={{ color: "var(--on-ink-accent)" }}>Quantum Computing</p>
         </div>
         <div className="float-b pointer-events-none absolute bottom-40 right-12 hidden rounded-xl border px-3 py-2 backdrop-blur xl:block" style={{ borderColor: "var(--ink-hairline)", background: "rgba(255,255,255,0.06)" }}>
           <p className="text-[10px]" style={{ color: "var(--on-ink-dim)" }}>Cited</p>
@@ -118,7 +118,7 @@ export default function LoginPage() {
           <p className="mt-4 text-sm" style={{ color: "var(--on-ink-dim)" }}>
             One profile, one chat. Ask for ideas, push back on what comes back
             (&ldquo;avoid AR/VR&rdquo;, &ldquo;more optimization&rdquo;), and every answer still cites a
-            real Project ID and a real similarity score.
+            real Project ID from the catalogue.
           </p>
         </div>
         <p className="relative text-xs" style={{ color: "var(--on-ink-dim)" }}>

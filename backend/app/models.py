@@ -37,6 +37,11 @@ class ProblemStatement(Base):
     source_batch: Mapped[str] = mapped_column(String(80), default="initial", index=True)
     # kept for audit when ingestion rewrites a duplicated ProjectID
     original_project_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # optional upload columns - descriptive only, never used in scoring
+    domain: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    field: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    difficulty: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

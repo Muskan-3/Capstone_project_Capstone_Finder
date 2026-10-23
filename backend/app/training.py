@@ -30,6 +30,7 @@ def _active_docs(db: Session) -> list[DocMeta]:
                 title=r.title or "",
                 statement=r.statement or "",
                 source_batch=r.source_batch,
+                domain=r.domain,
             )
         )
     return docs

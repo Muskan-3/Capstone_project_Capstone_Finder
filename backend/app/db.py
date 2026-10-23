@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -49,3 +49,26 @@ def init_db() -> None:
     from . import models  # noqa: F401  (register mappers)
 
     Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
+
+
+# columns added after the first release; create_all() never alters an existing
+# table, so older databases get them here (nullable, so no backfill needed)
+_LATE_COLUMNS = {
+    "problem_statements": {
+        "domain": "VARCHAR(120)",
+        "field": "VARCHAR(120)",
+        "difficulty": "VARCHAR(40)",
+        "source": "VARCHAR(120)",
+    },
+}
+
+
+def _add_missing_columns() -> None:
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, cols in _LATE_COLUMNS.items():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl in cols.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
