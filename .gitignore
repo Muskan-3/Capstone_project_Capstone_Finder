@@ -11,6 +11,7 @@ venv/
 backend/compass.db
 backend/artifacts/
 backend/.env
+*.db.bak
 
 # chatbot small-talk layer - large trained weights + downloaded corpus
 chatbot/models/
